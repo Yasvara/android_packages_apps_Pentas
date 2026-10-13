@@ -198,10 +198,12 @@ class SessionService : Hilt_SessionService() {
         }
     }
 
-    /** The overlay's main thread runs at display priority on the system cpuset during a game. */
+    /**
+     * The overlay's main thread runs at display priority during a game. Its cpuset is left to
+     * the bind: THREAD_GROUP_SYSTEM would join system-background, and nothing moves it back.
+     */
     private fun setBoost(on: Boolean) {
         Process.setThreadPriority(if (on) Process.THREAD_PRIORITY_DISPLAY else Process.THREAD_PRIORITY_DEFAULT)
-        Process.setThreadGroupAndCpuset(Process.myTid(), if (on) Process.THREAD_GROUP_SYSTEM else Process.THREAD_GROUP_DEFAULT)
     }
 
     /** Read by Laras's Pentas tile: the live app and the last game played. */

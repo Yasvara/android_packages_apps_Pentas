@@ -244,7 +244,7 @@ class Sidebar @Inject constructor(
         state.keyboard.value = false
         state.reset()
         overlay.widgets.editing.value = false
-        Process.setThreadPriority(Process.THREAD_PRIORITY_DEFAULT)
+        if (mode != SidebarMode.MODE_GAME) Process.setThreadPriority(Process.THREAD_PRIORITY_DEFAULT)
         if (pkg != null) { handle?.visibility = View.VISIBLE; scheduleIdle() }
     }
 

@@ -197,6 +197,18 @@ fun RoundButton(
     ) { Glyph(icon, if (active) cs.onPrimary else cs.onSurface, size * 0.5f) }
 }
 
+/** Item [index] of [count] in a connected button group: the selected one morphs to a pill. */
+@Composable
+fun segmentShape(index: Int, count: Int, selected: Boolean, outer: Dp): Shape {
+    val r by animateDpAsState(if (selected) outer else 6.dp, Kit.fast(), label = "seg")
+    return when {
+        selected -> RoundedCornerShape(r)
+        index == 0 -> RoundedCornerShape(outer, r, r, outer)
+        index == count - 1 -> RoundedCornerShape(r, outer, outer, r)
+        else -> RoundedCornerShape(r)
+    }
+}
+
 /**
  * Connected segmented control (M3E button group). The selected segment morphs to a pill;
  * the rest keep tight inner corners. [enabled] greys single options out without hiding them.
@@ -215,14 +227,7 @@ fun <T> Segmented(
         options.forEachIndexed { i, (text, value) ->
             val on = value == selected
             val ok = enabled(value)
-            val outer = height / 2
-            val r by animateDpAsState(if (on) outer else 6.dp, Kit.fast(), label = "seg")
-            val shape = when {
-                on -> RoundedCornerShape(r)
-                i == 0 -> RoundedCornerShape(outer, r, r, outer)
-                i == options.lastIndex -> RoundedCornerShape(r, outer, outer, r)
-                else -> RoundedCornerShape(r)
-            }
+            val shape = segmentShape(i, options.size, on, height / 2)
             val bg by animateColorAsState(
                 if (on) cs.secondaryContainer else cs.surfaceContainerHigh, label = "segbg",
             )

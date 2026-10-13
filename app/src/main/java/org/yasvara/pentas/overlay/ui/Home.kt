@@ -19,6 +19,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -74,6 +75,7 @@ import org.yasvara.pentas.ui.kit.RoundButton
 import org.yasvara.pentas.ui.kit.Slider
 import org.yasvara.pentas.ui.kit.label
 import org.yasvara.pentas.ui.kit.num
+import org.yasvara.pentas.ui.kit.segmentShape
 
 @Composable
 fun Home(mode: Int) {
@@ -82,16 +84,21 @@ fun Home(mode: Int) {
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.spacedBy(Kit.Gap)) {
             Header()
-            if (mode == SidebarMode.MODE_GAME) LiveTiles()
-            ThermalSwitcher()
-            MediaCard()
-            BrightnessRow()
-            Toggles()
-            Spacer(Modifier.weight(1f))
-            Tools()
+            if (mode == SidebarMode.MODE_GAME) Monitor(Modifier.weight(1f)) { Controls() } else Controls()
         }
         if (listOpen) ProfileList()
     }
+}
+
+/** Everything under the live tiles. */
+@Composable
+private fun ColumnScope.Controls() {
+    ThermalSwitcher()
+    MediaCard()
+    BrightnessRow()
+    Toggles()
+    Spacer(Modifier.weight(1f))
+    Tools()
 }
 
 @Composable
@@ -169,109 +176,6 @@ private fun BatteryGlyph(level: Int, charging: Boolean) {
     }
 }
 
-// ── live tiles ────────────────────────────────────────────────────────────
-
-@Composable
-private fun Tile(modifier: Modifier, onClick: (() -> Unit)? = null, content: @Composable () -> Unit) {
-    Column(
-        modifier.height(86.dp).clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.surfaceContainer)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 7.dp),
-        verticalArrangement = Arrangement.SpaceBetween,
-    ) { content() }
-}
-
-@Composable
-private fun TileLabel(text: String, value: String? = null, warn: Boolean = false) {
-    val cs = MaterialTheme.colorScheme
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(text, style = label(10.5.sp), color = cs.onSurfaceVariant)
-        Spacer(Modifier.weight(1f))
-        value?.let { Text(it, style = num(10.5.sp, 560), color = if (warn) cs.error else cs.onSurfaceVariant) }
-    }
-}
-
-@Composable
-private fun TileValue(big: String, unit: String = "") {
-    Row(verticalAlignment = Alignment.Bottom) {
-        Text(big, style = num(16.sp, 620), color = MaterialTheme.colorScheme.onSurface)
-        if (unit.isNotEmpty()) Text(" $unit", style = label(10.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
-private fun LiveTiles() {
-    val o = LocalOverlay.current
-    val cs = MaterialTheme.colorScheme
-    val s by o.bus.snapshot.collectAsState()
-    val fps by o.fps.realFpsHistory.collectAsState()
-    var gpuCap by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(Unit) { while (true) { gpuCap = o.perf.gpuLiveMaxHz(); delay(2000) } }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        // FPS: the rate against the panel's ladder of refresh steps.
-        val hz = o.fps.maxRefreshRate
-        val now = fps.lastOrNull() ?: 0f
-        Tile(Modifier.weight(1f), onClick = { o.state.open(Page.MONITOR) }) {
-            TileLabel("FPS", "${hz.toInt()} Hz")
-            Text("${now.toInt()}", style = num(22.sp, 620), color = cs.primary)
-            val steps = listOf(30f, 45f, 60f, 90f, hz)
-            Row(Modifier.fillMaxWidth().height(8.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom) {
-                steps.forEachIndexed { i, f ->
-                    Box(
-                        Modifier.weight(1f).fillMaxHeight(0.4f + 0.15f * i).clip(RoundedCornerShape(2.dp))
-                            .background(if (now >= f - 2f) cs.primary else cs.surfaceContainerHighest)
-                    )
-                }
-            }
-        }
-        // CPU: one bar per cluster, track sized by its max clock, fill by the live clock.
-        Tile(Modifier.weight(1f)) {
-            TileLabel("CPU", "%.0f°".format(s.cpuTempC), s.cpuTempC >= 70f)
-            val top = s.cpuClusters.maxOfOrNull { it.hwMaxKhz }?.coerceAtLeast(1) ?: 1
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                s.cpuClusters.forEach { c ->
-                    Box(Modifier.fillMaxWidth(c.hwMaxKhz.toFloat() / top).height(4.dp).clip(CircleShape).background(cs.surfaceContainerHighest)) {
-                        Box(
-                            Modifier.fillMaxHeight().fillMaxWidth((c.curKhz.toFloat() / c.hwMaxKhz.coerceAtLeast(1)).coerceIn(0f, 1f))
-                                .clip(CircleShape).background(if (c.scalingMaxKhz < c.hwMaxKhz) cs.tertiary else cs.primary)
-                        )
-                    }
-                }
-            }
-            TileValue("%.1f".format(s.cpuFreqMaxKhz / 1e6f), "GHz")
-        }
-        // GPU: the frequency steps as a ladder; steps above the live cap are dimmed.
-        Tile(Modifier.weight(1f)) {
-            TileLabel("GPU", "${s.gpuUsage}%")
-            val table = o.perf.gpuInfo.availableHz.sorted()
-            Row(Modifier.fillMaxWidth().height(26.dp), horizontalArrangement = Arrangement.spacedBy(1.5.dp), verticalAlignment = Alignment.Bottom) {
-                table.forEachIndexed { i, hz ->
-                    val lit = hz / 1_000_000 <= s.gpuFreqMhz
-                    val capped = gpuCap > 0 && hz > gpuCap
-                    Box(
-                        Modifier.weight(1f).fillMaxHeight(0.15f + 0.85f * (i + 1) / table.size.coerceAtLeast(1))
-                            .clip(RoundedCornerShape(1.dp))
-                            .background(when { capped -> cs.surfaceContainerHighest.copy(alpha = 0.4f); lit -> cs.primary; else -> cs.surfaceContainerHighest })
-                    )
-                }
-            }
-            TileValue("${s.gpuFreqMhz}", "MHz")
-        }
-        // RAM: one cell per GB.
-        Tile(Modifier.weight(1f)) {
-            TileLabel("RAM")
-            val cells = kotlin.math.ceil(s.ramTotalGb).toInt().coerceIn(1, 24)
-            Row(Modifier.fillMaxWidth().height(9.dp), horizontalArrangement = Arrangement.spacedBy(1.5.dp)) {
-                repeat(cells) { i ->
-                    Box(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(3.dp))
-                        .background(if (i < s.ramUsedGb) cs.primary else cs.surfaceContainerHighest))
-                }
-            }
-            TileValue("%.1f".format(s.ramUsedGb), "/ ${cells}")
-        }
-    }
-}
-
 // ── media ─────────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -342,14 +246,7 @@ private fun Toggles() {
     Row(Modifier.fillMaxWidth().height(38.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         tiles.forEachIndexed { i, t ->
             val on by t.observeEnabled()
-            val r by animateDpAsState(if (on) 19.dp else 6.dp, Kit.fast(), label = "tg")
-            val outer = 19.dp
-            val shape = when {
-                on -> RoundedCornerShape(r)
-                i == 0 -> RoundedCornerShape(outer, r, r, outer)
-                i == tiles.lastIndex -> RoundedCornerShape(r, outer, outer, r)
-                else -> RoundedCornerShape(r)
-            }
+            val shape = segmentShape(i, tiles.size, on, 19.dp)
             val bg by animateColorAsState(if (on) cs.primary else cs.surfaceContainerHigh, label = "tgbg")
             Box(
                 Modifier.weight(1f).fillMaxHeight().clip(shape).background(bg)

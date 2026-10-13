@@ -27,7 +27,7 @@ import javax.inject.Singleton
 /** One cluster's live DVFS state. `scalingMax < hwMax` ⇒ a thermal ceiling is in force. */
 data class ClusterSnap(
     val name: String,
-    val cpuCount: Int,
+    val cpuIds: List<Int>,
     val curKhz: Long,        // avg scaling_cur_freq of the cluster
     val scalingMaxKhz: Long, // current ceiling (thermal .ko / governor)
     val hwMaxKhz: Long,      // silicon max (cpuinfo_max_freq)
@@ -46,6 +46,7 @@ data class TelemetrySnapshot(
     val cpuCeilingCapped: Boolean = false,
     val gpuUsage: Int = 0,
     val gpuFreqMhz: Int = 0,
+    val gpuCapHz: Long = 0,                          // live devfreq ceiling, 0 if unreadable
     val gpuTempC: Float = 0f,                        // max over gpu‑typed zones
     val gpuHeat: Float = 0f,
     val gpuCeilingCapped: Boolean = false,
@@ -138,7 +139,7 @@ class TelemetryBus @Inject constructor(
             val scalingMax = KernelNodeIO.readLong("${c.policyDir}/scaling_max_freq") ?: c.hwMaxKhz
             if (scalingMax in 1 until c.hwMaxKhz - 1_000L) cpuCeiling = true
             clusterFreqMhz += (avgCur / 1000L).toInt()
-            clusterSnaps += ClusterSnap(c.name, c.cpuIds.size, avgCur, scalingMax, c.hwMaxKhz)
+            clusterSnaps += ClusterSnap(c.name, c.cpuIds, avgCur, scalingMax, c.hwMaxKhz)
         }
 
         // Domain temps = max of resolved zones (hottest sensor wins).
@@ -190,7 +191,7 @@ class TelemetryBus @Inject constructor(
             cpuCoreFreqKhz = cpu.perCoreFreqKhz.map { it.toInt() },
             cpuFreqMaxKhz = cpu.maxFreqKhz,
             cpuTempC = cpuTemp, cpuHeat = cpuHeat, cpuCeilingCapped = cpuCeiling,
-            gpuUsage = gpuUsage, gpuFreqMhz = gpuFreqMhz,
+            gpuUsage = gpuUsage, gpuFreqMhz = gpuFreqMhz, gpuCapHz = gpuScalingMax,
             gpuTempC = gpuTemp, gpuHeat = gpuHeat, gpuCeilingCapped = gpuCeiling,
             thermalHeadroomReduced = cpuCeiling || gpuCeiling,
             ddrTempC = ddrTemp,

@@ -16,9 +16,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.yasvara.pentas.overlay.overlayParams
 import org.yasvara.pentas.overlay.overlayView
@@ -28,14 +30,14 @@ import org.yasvara.pentas.telemetry.network.NetworkTelemetry
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** One ranked process row for the Processes widget. */
+/** One process ranked by CPU share. */
 data class ProcessUsage(val name: String, val usagePercent: Float)
 
 /**
  * Owns the floating widget windows for a game session. Every data source runs only while a
  * widget that shows it is on: the telemetry bus for any widget, FPS for an FPS field, the
- * process sampler for Processes. Widgets pass touches through to the game unless the Widgets
- * page is open, when they can be dragged.
+ * process sampler while [processes] is collected. Widgets pass touches through to the game
+ * unless the Widgets page is open, when they can be dragged.
  */
 @Singleton
 class WidgetOverlay @Inject constructor(
@@ -48,15 +50,23 @@ class WidgetOverlay @Inject constructor(
     private val wm = context.getSystemService(WindowManager::class.java)
     private val views = mutableMapOf<Widget, Pair<ComposeView, WindowManager.LayoutParams>>()
     private var scope: CoroutineScope? = null
-    private var sampler: Job? = null
     private var busOn = false
     private var fpsOn = false
 
     /** True while the Widgets settings page is open: widgets become draggable. */
     val editing = mutableStateOf(false)
 
-    private val _processes = MutableStateFlow<List<ProcessUsage>>(emptyList())
-    val processes: StateFlow<List<ProcessUsage>> = _processes
+    /** Top processes by CPU, shared by the Processes widget and the CPU card; sampled only while collected. */
+    val processes: StateFlow<List<ProcessUsage>> = flow {
+        val s = ProcessCpuSampler(context, topN = 12)
+        while (true) {
+            s.sample().takeIf { it.isNotEmpty() }?.let { emit(it) }
+            delay(1500)
+        }
+    }.flowOn(Dispatchers.IO).stateIn(
+        CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+        SharingStarted.WhileSubscribed(replayExpirationMillis = 0), emptyList(),
+    )
 
     fun start() {
         if (scope != null) return
@@ -73,15 +83,6 @@ class WidgetOverlay @Inject constructor(
         val any = enabled.isNotEmpty()
         if (any != busOn) { busOn = any; if (any) bus.start() else bus.stop() }
         if (needFps != fpsOn) { fpsOn = needFps; if (needFps) fps.start() else fps.dispose() }
-        val wantProcs = Widget.PROCESSES in enabled
-        if (wantProcs && sampler == null) sampler = scope?.launch(Dispatchers.IO) {
-            val s = ProcessCpuSampler(context, topN = 12)
-            while (isActive) {
-                s.sample().takeIf { it.isNotEmpty() }?.let { _processes.value = it }
-                delay(1500)
-            }
-        } else if (!wantProcs) { sampler?.cancel(); sampler = null }
-
         Widget.entries.forEach { w ->
             val existing = views[w]
             if (w !in enabled) {
@@ -117,7 +118,6 @@ class WidgetOverlay @Inject constructor(
 
     fun stop() {
         scope?.cancel(); scope = null
-        sampler = null
         views.values.forEach { (v, _) -> runCatching { wm.removeViewImmediate(v) } }
         views.clear()
         if (busOn) { busOn = false; bus.stop() }

@@ -31,8 +31,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.yasvara.pentas.cache.AppIconCache
 import org.yasvara.pentas.telemetry.TelemetrySnapshot
 import org.yasvara.pentas.ui.kit.label
 import org.yasvara.pentas.ui.kit.num
@@ -154,23 +157,33 @@ private fun Temp(s: TelemetrySnapshot, set: WidgetSettings) {
 
 @Composable
 private fun Processes(o: WidgetOverlay) {
-    val cs = MaterialTheme.colorScheme
     val procs by o.processes.collectAsState()
     val icons = rememberAppIconCache()
     val system = o.settings.shows(Widget.PROCESSES, Field.SYSTEM)
     val rows = procs.filter { system || icons.isApp(it.name) }.take(8)
     Column(Modifier.width(200.dp).padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        rows.forEach { p ->
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                val icon = icons.icon(p.name, 40)
-                if (icon != null) Image(icon, null, Modifier.size(16.dp))
-                else Box(Modifier.size(16.dp).clip(RoundedCornerShape(5.dp)).background(cs.surfaceContainerHighest))
-                Text(icons.label(p.name), Modifier.weight(1f), style = label(11.sp), color = cs.onSurface,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("%.0f%%".format(p.usagePercent), style = num(11.sp, 600),
-                    color = if (p.usagePercent >= 50f) cs.error else cs.onSurfaceVariant)
-            }
-        }
+        rows.forEach { ProcessRow(it, icons) }
         if (rows.isEmpty()) Text("—", style = label(11.sp), color = Color.Unspecified)
     }
 }
+
+@Composable
+internal fun ProcessRow(p: ProcessUsage, icons: AppIconCache, size: Dp = 16.dp, text: TextUnit = 11.sp) =
+    AppRow(p.name, "%.0f%%".format(p.usagePercent), icons, p.usagePercent >= 50f, size, text)
+
+/** Icon, label and a trailing value for a package or process [name]. */
+@Composable
+internal fun AppRow(name: String, value: String, icons: AppIconCache, warn: Boolean = false, size: Dp = 16.dp, text: TextUnit = 11.sp) {
+    val cs = MaterialTheme.colorScheme
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        val icon = icons.icon(name, ICON_PX)
+        if (icon != null) Image(icon, null, Modifier.size(size))
+        else Box(Modifier.size(size).clip(RoundedCornerShape(5.dp)).background(cs.surfaceContainerHighest))
+        Text(icons.label(name), Modifier.weight(1f), style = label(text), color = cs.onSurface,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(value, style = num(text, 600), color = if (warn) cs.error else cs.onSurfaceVariant)
+    }
+}
+
+/** One bitmap size for every row icon: [AppIconCache] keeps the first size it renders. */
+internal const val ICON_PX = 56

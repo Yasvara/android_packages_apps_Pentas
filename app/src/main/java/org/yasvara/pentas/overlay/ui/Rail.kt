@@ -11,17 +11,17 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -84,10 +84,7 @@ fun Rail(close: () -> Unit) {
         RoundButton(R.drawable.sym_picture_in_picture, "Open an app in a window", {
             o.state.appsPin.value = false; o.state.open(Page.APPS)
         }, size = 40.dp)
-        BoxWithConstraints(Modifier.weight(1f)) {
-            val slots = ((maxHeight.value + 6) / 46).toInt().coerceAtLeast(0)
-            ShortcutColumn(slots, close)
-        }
+        ShortcutColumn(Modifier.weight(1f), close)
         RoundButton(R.drawable.sym_add, "Add shortcut", {
             o.state.appsPin.value = true; o.state.open(Page.APPS)
         }, size = 40.dp, active = false)
@@ -116,13 +113,13 @@ private fun Ping() {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ShortcutColumn(slots: Int, close: () -> Unit) {
+private fun ShortcutColumn(modifier: Modifier, close: () -> Unit) {
     val o = LocalOverlay.current
     val mode = o.session.mode
     var apps by remember { mutableStateOf(emptyList<AppRef>()) }
     var rev by remember { mutableLongStateOf(0) }
-    LaunchedEffect(slots, rev) { apps = o.shortcuts.load(mode, o.pkg, slots) }
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    LaunchedEffect(rev) { apps = o.shortcuts.load(mode, o.pkg, SHORTCUTS) }
+    Column(modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         apps.forEach { app ->
             val bmp = remember(app.packageName) { app.icon?.toBitmap(96, 96)?.asImageBitmap() }
             Box(
@@ -133,5 +130,6 @@ private fun ShortcutColumn(slots: Int, close: () -> Unit) {
             ) { bmp?.let { Image(it, app.label, Modifier.size(40.dp)) } }
         }
     }
-    Spacer(Modifier.height(0.dp))
 }
+
+private const val SHORTCUTS = 20

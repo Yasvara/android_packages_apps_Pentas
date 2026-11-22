@@ -24,7 +24,7 @@ object MainModule {
     fun appSettings(@ApplicationContext context: Context) = AppSettings(context)
 
     @Provides @Singleton
-    fun fps(@ApplicationContext context: Context) = FpsInteractor(context)
+    fun fps(@ApplicationContext context: Context, bus: TelemetryBus) = FpsInteractor(context, bus)
 
     @Provides @Singleton
     fun statsCollector(@ApplicationContext context: Context, fps: FpsInteractor, bus: TelemetryBus) =

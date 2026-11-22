@@ -9,7 +9,11 @@ android_app {
     srcs: [
         "java/**/*.java",
         "java/**/*.kt",
+        ":yasvara-nada-aidl",
+        ":yasvara-nada-client",
     ],
+    // The Gradle build's copies of the two filegroups above.
+    exclude_srcs: ["java/com/android/server/yasvara/**/*"],
     static_libs: [
         "androidx.core_core-ktx",
         "kotlin-stdlib",
@@ -25,6 +29,8 @@ android_app {
         "androidx.lifecycle_lifecycle-runtime-compose",
         "kotlinx-coroutines-core",
         "SettingsLibDisplayUtils",
+        "rekam-controls",
+        "yasvara.pantau-java",
     ],
 
     kotlincflags: [

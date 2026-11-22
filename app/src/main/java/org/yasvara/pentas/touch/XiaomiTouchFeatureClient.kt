@@ -9,6 +9,8 @@ import android.os.Parcel
 import android.os.RemoteException
 import android.os.ServiceManager
 import android.util.Log
+import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.concurrent.thread
 
 /** Client for the vendor `ITouchFeature` AIDL HAL on the primary display. */
 object XiaomiTouchFeatureClient {
@@ -49,15 +51,16 @@ object XiaomiTouchFeatureClient {
      *  touch-drivers/include/uapi/touch/xiaomi_touch.h exactly. Do not guess
      *  these values; a wrong id silently lands in the driver's `default:` branch
      *  and only shows up as a LOG_ERROR in dmesg. */
-    const val MODE_GAME_MODE = 0                    // Touch_Game_Mode — gates the 240Hz path
+    const val MODE_GAME_MODE = 0                    // Touch_Game_Mode — game scan rate and game edge zones
     const val MODE_TUNE_TOUCH_UP_THRESHOLD = 2      // Touch-up threshold (default 2, 0 to 4)
     const val MODE_TUNE_JITTER_TOLERANCE = 3        // Jitter tolerance (default 2, 0 to 4)
     const val MODE_TUNE_AIM_SENSITIVITY = 4         // Aim sensitivity (default 2, 0 to 4)
     const val MODE_TUNE_TAP_STABILITY = 5           // Tap stability (default 2, 0 to 4)
     const val MODE_EXPERT_PRESET = 6                // Touch_Expert_Mode (1..3, default 1)
-    const val MODE_TUNE_EDGE_FILTER = 7             // Edge filter (default 2, 0 to 3)
-    const val MODE_PANEL_ORIENTATION = 8            // Panel orientation (0..3)
+    const val MODE_TUNE_EDGE_FILTER = 7             // Game edge rejection depth, 0..3; rebuilds zones in game mode
+    const val MODE_PANEL_ORIENTATION = 8            // Surface.ROTATION_*; rebuilds zones in game mode
     const val MODE_SUPER_REPORT_RATE = 202          // Touch_Super_Report — see setReportRateBoost
+    const val MODE_MOVE_JITTER = 206                // 0 = config locks; 1 = 6 px move, 10 px still
 
     /** Live panel scan rate in Hz, computed by the HAL. */
     const val MODE_REPORT_RATE = 1011
@@ -156,6 +159,7 @@ object XiaomiTouchFeatureClient {
     /** Modes above [KERNEL_MODE_NUM] the HAL acts on itself; verified on NT36532. */
     private val HAL_CONSUMED_MODES = setOf(
         MODE_SUPER_REPORT_RATE,
+        MODE_MOVE_JITTER,
         MODE_REPORT_RATE,
         MODE_GAME_START,
         MODE_GAME_PACKAGE_NAME,
@@ -172,6 +176,13 @@ object XiaomiTouchFeatureClient {
     @Volatile
     private var cachedBinder: IBinder? = null
 
+    private val restartListeners = CopyOnWriteArrayList<() -> Unit>()
+
+    /** Runs [listener] on a binder thread each time the HAL comes back after dying; its state is gone then. */
+    fun addRestartListener(listener: () -> Unit) {
+        restartListeners += listener
+    }
+
     private fun getService(): IBinder? {
         cachedBinder?.let {
             if (it.isBinderAlive) return it
@@ -180,8 +191,18 @@ object XiaomiTouchFeatureClient {
         return ServiceManager.getService(SERVICE_NAME)?.also {
             cachedBinder = it
             try {
-                it.linkToDeath({ cachedBinder = null }, 0)
+                it.linkToDeath(::onServiceDied, 0)
             } catch (_: RemoteException) {}
+        }
+    }
+
+    private fun onServiceDied() {
+        cachedBinder = null
+        if (restartListeners.isEmpty()) return
+        Log.w(TAG, "HAL died; waiting for restart")
+        thread(name = "touchfeature-restart", isDaemon = true) {
+            ServiceManager.waitForService(SERVICE_NAME)
+            if (getService() != null) restartListeners.forEach { it() }
         }
     }
 

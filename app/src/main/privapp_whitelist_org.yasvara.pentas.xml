@@ -24,9 +24,9 @@
         <permission name="android.permission.MODIFY_PHONE_STATE" />
         <permission name="android.permission.MODIFY_AUDIO_ROUTING"/>
         <permission name="android.permission.BLUETOOTH_PRIVILEGED" />
-        <permission name="android.permission.CAPTURE_AUDIO_OUTPUT" />
         <permission name="android.permission.CONTROL_DISPLAY_COLOR_TRANSFORMS" />
         <permission name="android.permission.PACKAGE_USAGE_STATS" />
         <permission name="yasvara.permission.MANAGE_LAYANG" />
+        <permission name="yasvara.permission.MANAGE_SWARA" />
     </privapp-permissions>
 </permissions>

@@ -29,7 +29,12 @@
     <string name="tile_lock_gesture">Lock Gestures</string>
     <string name="tile_rotation_lock">Rotation Lock</string>
     <string name="tile_super_touch">Super Touch</string>
+    <string name="tile_fast_touch">Fast Touch</string>
     <string name="tile_widgets">Widgets</string>
     <string name="tile_dolby">Dolby</string>
+    <string name="tile_kelir">Kelir</string>
+    <string name="tile_hide_hud">Hide HUD</string>
+    <string name="hide_hud_unavailable">This game doesn\'t give its 3D apart from the HUD</string>
+    <string name="hide_hud_restart">Hide HUD applies after the game restarts</string>
     <string name="tile_stats_record">Record stats</string>
 </resources>

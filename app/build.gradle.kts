@@ -74,8 +74,22 @@ kapt {
     correctErrorTypes = true
 }
 
+// Hidden platform APIs and Soong-only libs, taken from the ROM's out/ tree
+// (override with -Pyasvara.out=/path/to/out). framework.jar must precede
+// android.jar so its hidden members resolve.
+val romOut = file(providers.gradleProperty("yasvara.out").getOrElse("${rootDir}/../../../out"))
+val romJars = listOf(
+    "frameworks/base/framework/android_common/turbine-combined/framework.jar",
+    "frameworks/base/packages/SettingsLib/DisplayUtils/SettingsLibDisplayUtils/android_common/turbine/SettingsLibDisplayUtils.jar",
+    "packages/apps/Rekam/rekam-controls/android_common/kotlin_headers/rekam-controls.jar",
+    "packages/apps/Rekam/rekam-client/android_common/kotlin_headers/rekam-client.jar",
+    "packages/apps/Rekam/rekam-client/android_common/javac/rekam-client.jar",
+    "vendor/yasvara/pantau/aidl/yasvara.pantau-java/android_common/turbine/yasvara.pantau-java.jar",
+).map { romOut.resolve("soong/.intermediates/$it") }.filter { it.exists() }
+
 dependencies {
     compileOnly(fileTree(mapOf("dir" to "../system_libs", "include" to listOf("*.jar"))))
+    compileOnly(files(romJars))
     implementation("androidx.activity:activity-compose:1.12.2")
     implementation(platform("androidx.compose:compose-bom:2025.12.01"))
     implementation("androidx.compose.material3:material3:1.5.0-alpha16")
@@ -85,9 +99,22 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
     implementation("com.google.code.gson:gson:2.13.2")
-    implementation("com.google.dagger:hilt-android:2.57.2")
-    kapt("com.google.dagger:hilt-compiler:2.57.2")
+    implementation("com.google.dagger:hilt-android:2.60.1")
+    kapt("com.google.dagger:hilt-compiler:2.60.1")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    doFirst {
+        val prev = libraries.from.toList()
+        libraries.setFrom(romJars, prev)
+    }
+}
+
+tasks.withType<JavaCompile>().configureEach {
+    doFirst {
+        classpath = files(romJars) + classpath
+    }
 }

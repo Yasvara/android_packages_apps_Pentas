@@ -16,11 +16,12 @@ import org.yasvara.pentas.cache.AppIconCache
 import org.yasvara.pentas.cache.BannerBitmapCache
 import org.yasvara.pentas.thermal.PerfTuner
 import org.yasvara.pentas.thermal.ThermalController
+import org.yasvara.pentas.touch.TouchOrientationRelay
 import javax.inject.Inject
 
 /**
- * The persistent main process runs only the thermal and clock control plane; screens and the
- * session sidebar live in ":ui".
+ * The persistent main process runs only the thermal, clock and touch-orientation control plane;
+ * screens and the session sidebar live in ":ui".
  */
 @HiltAndroidApp(Application::class)
 class Pentas : Hilt_Pentas() {
@@ -28,6 +29,7 @@ class Pentas : Hilt_Pentas() {
     @Inject lateinit var perf: dagger.Lazy<PerfTuner>
     @Inject lateinit var banners: BannerBitmapCache
     @Inject lateinit var icons: AppIconCache
+    @Inject lateinit var touchOrientation: dagger.Lazy<TouchOrientationRelay>
 
     private val recovery by lazy { getSharedPreferences("pentas_recovery", MODE_PRIVATE) }
 
@@ -42,6 +44,7 @@ class Pentas : Hilt_Pentas() {
         recovery.edit { putInt(KEY_RESTARTS, 0) }
         if (getProcessName() != packageName) return
         thermal.get().start()
+        touchOrientation.get().start()
         applyGlobalClocks()
     }
 

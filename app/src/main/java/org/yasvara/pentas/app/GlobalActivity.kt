@@ -71,7 +71,8 @@ private fun Global(finish: () -> Unit) {
     var clocks by remember { mutableStateOf(perf.loadGlobalProfile()) }
     var thermal by remember { mutableIntStateOf(Settings.System.getIntForUser(cr, ThermalProfiles.KEY_THERMAL_PROFILE, 0, UserHandle.USER_CURRENT)) }
     var curve by remember { mutableStateOf(charging.getGlobalProfileId()) }
-    var bypass by remember { mutableStateOf(Settings.System.getIntForUser(cr, ThermalProfiles.KEY_BYPASS_CHARGING, 0, UserHandle.USER_CURRENT) == 1) }
+    var bypassMode by remember { mutableIntStateOf(Settings.System.getIntForUser(cr, ThermalProfiles.KEY_BYPASS_CHARGING, 0, UserHandle.USER_CURRENT)) }
+    val bypass = bypassMode != ThermalNodes.BYPASS_MODE_OFF
     Screen("Global", onBack = finish) {
         Section("Clocks")
         ClockEditor(perf, clocks) { clocks = it; perf.saveGlobalProfile(it) }
@@ -98,7 +99,7 @@ private fun Global(finish: () -> Unit) {
         val ids = listOf<String?>(null) + curves.map { it.id }
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             ids.forEachIndexed { i, id ->
-                ListItem(curves.firstOrNull { it.id == id }?.name ?: "Vendor default", Kit.connected(i, ids.size + 1, 24.dp, 6.dp),
+                ListItem(curves.firstOrNull { it.id == id }?.name ?: "Cool 90W (Default)", Kit.connected(i, ids.size + 1, 24.dp, 6.dp),
                     Modifier.height(52.dp), selected = id == curve,
                     trailing = if (id == curve) ({ Icon(Sym.Check, null, tint = cs.onSecondaryContainer) }) else null,
                     onClick = { curve = id; charging.setGlobalProfileId(id); charging.applyActiveProfile(null) })
@@ -107,8 +108,8 @@ private fun Global(finish: () -> Unit) {
         }
         if (remember { KernelNodeIO.exists(ThermalNodes.BYPASS_CHARGE) }) Block {
             SwitchRow("Bypass charging", bypass, {
-                bypass = it
-                Settings.System.putIntForUser(cr, ThermalProfiles.KEY_BYPASS_CHARGING, if (it) 1 else 0, UserHandle.USER_CURRENT)
+                bypassMode = if (it) ThermalNodes.BYPASS_MODE_FORCE else ThermalNodes.BYPASS_MODE_OFF
+                Settings.System.putIntForUser(cr, ThermalProfiles.KEY_BYPASS_CHARGING, bypassMode, UserHandle.USER_CURRENT)
             })
         }
     }

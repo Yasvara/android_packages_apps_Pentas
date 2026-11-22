@@ -215,7 +215,7 @@ class ThermalController @Inject constructor(
         applyTempLimit()
         applyTempOffset()
         applyChargingProfile()
-        applyBypassCharging()
+        applyBypassCharging(fromExplicitToggle = false)
         applyHbm()
         applyDcDimming()
     }
@@ -352,20 +352,29 @@ class ThermalController @Inject constructor(
         Log.d(TAG, "Charge range: $chargeMinWatt-$chargeMaxWatt W ($minUa-$maxUa µA)")
     }
 
-    /** Bypass charging runs the system from the adapter with the pack held at 0 A. */
-    private fun applyBypassCharging() {
-        val bypass = Settings.System.getIntForUser(
+    /**
+     * Bypass charging runs the system from the adapter with the pack held at 0 A.
+     * Supports all 3 kernel modes: 0 = Off, 1 = Always (FORCE), 2 = Games only (AUTO).
+     * When called from [applyAll] (boot or unrelated setting change), avoid clobbering
+     * an active custom charging profile's bypass mode if the global toggle is 0.
+     */
+    private fun applyBypassCharging(fromExplicitToggle: Boolean = true) {
+        val mode = Settings.System.getIntForUser(
             resolver, ThermalProfiles.KEY_BYPASS_CHARGING, 0, UserHandle.USER_CURRENT
-        ) == 1
+        ).coerceIn(ThermalNodes.BYPASS_MODE_OFF, ThermalNodes.BYPASS_MODE_AUTO)
+
+        if (!fromExplicitToggle && mode == ThermalNodes.BYPASS_MODE_OFF) {
+            val activeId = chargingRepo.resolveActiveProfileId(foregroundPackage)
+            val profileBypass = activeId?.let { chargingRepo.getById(it) }?.policy?.bypass
+            if (profileBypass != null && profileBypass.mode.wire != ThermalNodes.BYPASS_MODE_OFF) {
+                return
+            }
+        }
 
         if (KernelNodeIO.exists(ThermalNodes.BYPASS_CHARGE)) {
-            KernelNodeIO.write(
-                ThermalNodes.BYPASS_CHARGE,
-                if (bypass) ThermalNodes.BYPASS_MODE_FORCE
-                else ThermalNodes.BYPASS_MODE_OFF
-            )
+            KernelNodeIO.write(ThermalNodes.BYPASS_CHARGE, mode)
         } else {
-            KernelNodeIO.write(ThermalNodes.SMART_NIGHT, bypass)
+            KernelNodeIO.write(ThermalNodes.SMART_NIGHT, mode != ThermalNodes.BYPASS_MODE_OFF)
         }
     }
 
@@ -491,10 +500,12 @@ class ThermalController @Inject constructor(
         context.registerReceiver(
             object : BroadcastReceiver() {
                 override fun onReceive(ctx: Context, intent: Intent) {
-                    // Re-publish the band after PD negotiation settles
+                    // Re-publish the band after PD negotiation settles (only when not on a custom profile)
                     handler.postDelayed({
-                        Log.i(TAG, "Charger connected: re-publishing charge band")
-                        applyChargeSpeed()
+                        if (chargingRepo.resolveActiveProfileId(foregroundPackage) == null) {
+                            Log.i(TAG, "Charger connected: re-publishing charge band")
+                            applyChargeSpeed()
+                        }
                     }, 2000)
                 }
             },

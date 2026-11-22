@@ -1,0 +1,67 @@
+{
+  "revision": 7,
+  "peek": false,
+  "split": false,
+  "inspect": false,
+  "split_x": 0.0,
+  "detail": [],
+  "colour": [
+    {
+      "kind": "Brightness/Contrast",
+      "intensity": 1.0,
+      "values": [
+        0.500015,
+        0.199988,
+        0.0,
+        0.299997,
+        1.199988
+      ]
+    },
+    {
+      "kind": "Color",
+      "intensity": 0.8,
+      "values": [
+        0.299997,
+        0.0,
+        0.0,
+        0.0,
+        0.500015,
+        200.001205,
+        0.250008
+      ]
+    },
+    {
+      "kind": "Levels",
+      "intensity": 1.0,
+      "values": [
+        0.050005,
+        0.949995,
+        1.100009,
+        0.0
+      ]
+    },
+    {
+      "kind": "Black & White",
+      "intensity": 0.4,
+      "values": []
+    },
+    {
+      "kind": "Sepia",
+      "intensity": 0.300008,
+      "values": []
+    },
+    {
+      "kind": "Night Mode",
+      "intensity": 0.500008,
+      "values": []
+    },
+    {
+      "kind": "Colorblind",
+      "intensity": 1.0,
+      "values": [
+        1.0
+      ]
+    }
+  ],
+  "screen": []
+}

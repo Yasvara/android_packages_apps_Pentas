@@ -33,11 +33,12 @@ object ChargingProfiles {
 
     /** Charger rating in Watt, as printed on the box. */
     const val MIN_WATT = 1f
-    const val DEFAULT_MAX_WATT = 120f
+    const val DEFAULT_MAX_WATT = 100f
 
     /**
      * Dynamically detected from Device Tree (/sys/firmware/devicetree/base/soc/mca_strategy_quick_charge/div_max_curr),
-     * or falls back to [DEFAULT_MAX_WATT]. Automatically scales to 67W, 90W, 120W, or custom DT limits.
+     * or falls back to [DEFAULT_MAX_WATT]. With [UA_PER_WATT] = 222_000, onyx's 22 A SC8581 limit
+     * maps directly to 100 W (90 W sustained = 20 A).
      */
     val MAX_WATT: Float by lazy {
         detectMaxWatt()
@@ -77,13 +78,18 @@ object ChargingProfiles {
         return DEFAULT_MAX_WATT
     }
 
-    /** Charger-side watts to battery-side µA, calibrated on the vendor SIC table (90 W ≙ 15.6 A). */
-    const val UA_PER_WATT = 172_000f
+    /**
+     * Charger-side watts to battery-side µA for a 1S Si-C cell (~4.25 V avg, ~96.5% CP efficiency):
+     * 90 W ≙ 20.0 A, 100 W ≙ 22.2 A, 67 W ≙ 14.9 A, 45 W ≙ 10.0 A, 30 W ≙ 6.7 A, 15 W ≙ 3.3 A.
+     */
+    const val UA_PER_WATT = 222_000f
 
     fun wattToUa(w: Float): Long =
         (w.toDouble() * UA_PER_WATT).toLong().coerceIn(FCC_HARD_MIN_UA, FCC_HARD_MAX_UA)
 
     fun uaToWatt(ua: Long): Float = ua / UA_PER_WATT
+
+    fun uaToAmp(ua: Long): Float = ua / 1_000_000f
 
     fun mcToC(mc: Long): Float = mc / 1000f
     fun cToMc(c: Float): Long = (c * 1000f).toLong()

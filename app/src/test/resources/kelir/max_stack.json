@@ -1,0 +1,86 @@
+{
+  "revision": 10,
+  "peek": false,
+  "split": true,
+  "inspect": false,
+  "split_x": 0.300008,
+  "detail": [
+    {
+      "kind": "Tilt-Shift",
+      "intensity": 1.0,
+      "values": [
+        1.0,
+        0.400006,
+        0.250003,
+        0.599994,
+        -29.999084,
+        0.900006
+      ]
+    },
+    {
+      "kind": "Sharpen",
+      "intensity": 0.500008,
+      "values": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "kind": "Watercolor",
+      "intensity": 1.0,
+      "values": [
+        0.299997,
+        0.700003,
+        0.900006,
+        0.400006
+      ]
+    }
+  ],
+  "colour": [
+    {
+      "kind": "Brightness/Contrast",
+      "intensity": 1.0,
+      "values": [
+        -1.000031,
+        0.0,
+        -0.500015,
+        0.0,
+        1.0
+      ]
+    }
+  ],
+  "screen": [
+    {
+      "kind": "Halftone",
+      "intensity": 0.749996,
+      "values": [
+        7.999878,
+        1.0
+      ]
+    },
+    {
+      "kind": "Old Film",
+      "intensity": 1.0,
+      "values": [
+        0.900006,
+        0.200003,
+        0.6
+      ]
+    },
+    {
+      "kind": "Vignette",
+      "intensity": 1.0,
+      "values": [
+        0.5,
+        0.5
+      ]
+    },
+    {
+      "kind": "Letterbox",
+      "intensity": 0.500008,
+      "values": [
+        1.849988
+      ]
+    }
+  ]
+}

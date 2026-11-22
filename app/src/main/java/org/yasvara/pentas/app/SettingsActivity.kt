@@ -10,6 +10,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.os.Bundle
+import android.os.UserHandle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -82,11 +83,13 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.yasvara.pentas.charging.ChargingProfileListActivity
+import org.yasvara.pentas.charging.ChargingProfiles
 import org.yasvara.pentas.data.AppSettings
 import org.yasvara.pentas.data.SystemSettings
 import org.yasvara.pentas.data.fpsstats.FpsStatsRepository
 import org.yasvara.pentas.data.AppClassifier
 import org.yasvara.pentas.settings.fpsstats.FpsStatsActivity
+import org.yasvara.pentas.thermal.ThermalNodes
 import org.yasvara.pentas.thermal.ThermalProfiles
 import org.yasvara.pentas.thermal.custom.CustomProfileListActivity
 import org.yasvara.pentas.ui.theme.PentasTheme
@@ -95,14 +98,21 @@ import kotlin.math.roundToInt
 
 /** Pentas settings: sidebar placement, library and performance overview, session behaviour. */
 class SettingsActivity : ComponentActivity() {
+    private val resumeTick = androidx.compose.runtime.mutableIntStateOf(0)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContent {
             PentasTheme {
-                PentasSettingsScreen(onBack = { finish() })
+                PentasSettingsScreen(revision = resumeTick.intValue, onBack = { finish() })
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        resumeTick.intValue++
     }
 }
 
@@ -115,6 +125,7 @@ private data class Overview(
     val sessions: Int,
     val lastFps: Float?,
     val thermal: String,
+    val chargingProfile: String,
 )
 
 private fun loadOverview(context: Context): Overview {
@@ -136,22 +147,38 @@ private fun loadOverview(context: Context): Overview {
         Settings.System.getInt(cr, ThermalProfiles.KEY_THERMAL_PROFILE, 0),
         Settings.System.getString(cr, ThermalProfiles.KEY_CUSTOM_PROFILES),
     )
+    val activeChgId = Settings.System.getStringForUser(
+        cr, ChargingProfiles.KEY_GLOBAL_PROFILE, UserHandle.USER_CURRENT
+    )?.takeIf { it.isNotEmpty() }
+    val chargingProfile = if (activeChgId == null) {
+        "Cool 90W"
+    } else {
+        runCatching {
+            val arr = org.json.JSONArray(
+                Settings.System.getStringForUser(cr, ChargingProfiles.KEY_CUSTOM_PROFILES, UserHandle.USER_CURRENT) ?: "[]"
+            )
+            (0 until arr.length()).map { arr.getJSONObject(it) }
+                .firstOrNull { it.optString("id") == activeChgId }
+                ?.optString("name")?.takeIf { it.isNotBlank() }
+        }.getOrNull() ?: "Custom"
+    }
     return Overview(
         library = Library(games, labels),
         sessions = sessions.size,
         lastFps = sessions.maxByOrNull { it.startTimeMs }?.fpsAvg,
         thermal = thermal,
+        chargingProfile = chargingProfile,
     )
 }
 
 // ── Screen ──────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun PentasSettingsScreen(onBack: () -> Unit) {
+private fun PentasSettingsScreen(revision: Int, onBack: () -> Unit) {
     val context = LocalContext.current
     val appSettings = remember { AppSettings(context.applicationContext) }
     val obs = appSettings.observable
-    val overview by produceState<Overview?>(null) {
+    val overview by produceState<Overview?>(null, revision) {
         value = withContext(Dispatchers.IO) { loadOverview(context.applicationContext) }
     }
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -181,7 +208,7 @@ private fun PentasSettingsScreen(onBack: () -> Unit) {
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ThermalCard(overview?.thermal, Modifier.weight(1f)) { CustomProfileListActivity.start(context) }
-                ChargingCard(obs, Modifier.weight(1f)) { ChargingProfileListActivity.start(context) }
+                ChargingCard(overview?.chargingProfile, revision, Modifier.weight(1f)) { ChargingProfileListActivity.start(context) }
             }
         }
 
@@ -437,17 +464,36 @@ private fun ThermalCard(name: String?, modifier: Modifier, onClick: () -> Unit) 
 
 @Composable
 private fun ChargingCard(
-    obs: org.yasvara.pentas.utils.ObservablePreferences,
+    profileName: String?,
+    revision: Int,
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
-    val bypass by remember { obs.booleanState("bypass_charge_enabled", false) }
+    val cr = LocalContext.current.contentResolver
+    var bypassMode by remember(revision) {
+        mutableStateOf(
+            Settings.System.getIntForUser(
+                cr, ThermalProfiles.KEY_BYPASS_CHARGING, ThermalNodes.BYPASS_MODE_OFF,
+                UserHandle.USER_CURRENT,
+            )
+        )
+    }
+    val bypass = bypassMode != ThermalNodes.BYPASS_MODE_OFF
+    val bypassLabel = when (bypassMode) {
+        ThermalNodes.BYPASS_MODE_FORCE -> "Bypass: Always"
+        ThermalNodes.BYPASS_MODE_AUTO -> "Bypass: Games"
+        else -> "Bypass off"
+    }
     BentoCard(modifier.height(188.dp), onClick = onClick) {
         Column(Modifier.fillMaxSize()) {
             CardLabel("Charging")
             Spacer(Modifier.height(6.dp))
-            Text(if (bypass) "Bypass on" else "Bypass off", fontSize = 17.sp, color = cs.onSurface)
+            Text(profileName ?: "Cool 90W", fontSize = 17.sp, color = cs.onSurface,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(bypassLabel, fontSize = 12.sp,
+                color = if (bypass) cs.primary else cs.onSurfaceVariant,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.weight(1f))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 // Charger → SoC, and the battery dimmed when bypass skips it.
@@ -469,8 +515,16 @@ private fun ChargingCard(
                         androidx.compose.ui.geometry.Size(w * 0.11f, h * 0.56f),
                         androidx.compose.ui.geometry.CornerRadius(4.dp.toPx()))
                 }
-                Switch(checked = bypass,
-                    onCheckedChange = { obs.setBoolean("bypass_charge_enabled", false, it) })
+                Switch(
+                    checked = bypass,
+                    onCheckedChange = { on ->
+                        val next = if (on) ThermalNodes.BYPASS_MODE_FORCE else ThermalNodes.BYPASS_MODE_OFF
+                        bypassMode = next
+                        Settings.System.putIntForUser(
+                            cr, ThermalProfiles.KEY_BYPASS_CHARGING, next, UserHandle.USER_CURRENT
+                        )
+                    },
+                )
             }
         }
     }

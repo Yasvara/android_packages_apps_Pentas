@@ -79,22 +79,49 @@ data class ThermalLadderRow(
     }
 }
 
-/** Bypass regulator: trims input current until the pack neither charges nor drains. */
+/**
+ * Hybrid bypass regulator (Buck ZDFB v3 + SC8581 DIV2 direct-drive CP-Bypass).
+ * Buck ZDFB v3 handles <12 W and non-PPS adapters; when [cpEnable] is true on any
+ * >=25 W PPS adapter and system load exceeds [cpEnterMw], SC8581 takes over at ~98% eff.
+ */
 data class BypassTuning(
     /** Pack current to hold, mA, charge-positive. 0 = true bypass. */
     val targetMa: Int = 0,
     val fccMaxMa: Int = 3_000,
     val kp: Int = 15,
-    val deadbandMa: Int = 5,
-    val stepMa: Int = 30,
+    /** ZDFB v3 deadband around [targetMa] (mA). 30 mA prevents buck step hunting. */
+    val deadbandMa: Int = 30,
+    /** ZDFB v3 coarse adjustment step (mA). */
+    val stepMa: Int = 50,
     val in9vMa: Int = 3_000,
     val in5vMa: Int = 3_000,
+    /** Enable SC8581 DIV2 direct-drive CP-Bypass for heavy loads on PPS adapters. */
+    val cpEnable: Boolean = true,
+    /** System load threshold (mW) to hand off from buck to SC8581 CP-Bypass (6000..25000). */
+    val cpEnterMw: Int = 12_000,
+    /** Max cell voltage (mV) allowed in CP-Bypass before returning to buck (4200..4480). */
+    val cpVbatMaxMv: Int = 4_450,
     val mode: BypassMode = BypassMode.AUTO,
 ) {
+    fun normalized(): BypassTuning = copy(
+        targetMa = targetMa.coerceIn(-500, 3_000),
+        fccMaxMa = fccMaxMa.coerceIn(0, ChargingEnvelope.FCC_MAX_MA),
+        kp = kp.coerceIn(0, 1_000),
+        deadbandMa = deadbandMa.coerceIn(0, 500),
+        stepMa = stepMa.coerceIn(1, 1_000),
+        in9vMa = in9vMa.coerceIn(0, ChargingEnvelope.IIN_MAX_MA),
+        in5vMa = in5vMa.coerceIn(0, ChargingEnvelope.IIN_MAX_MA),
+        cpEnterMw = cpEnterMw.coerceIn(ChargingEnvelope.CP_ENTER_MIN_MW, ChargingEnvelope.CP_ENTER_MAX_MW),
+        cpVbatMaxMv = cpVbatMaxMv.coerceIn(ChargingEnvelope.CP_VBAT_MIN_MV, ChargingEnvelope.CP_VBAT_MAX_MV),
+    )
+
     fun toJson(): JSONObject = JSONObject().apply {
         put("target", targetMa); put("fcc_max", fccMaxMa)
         put("kp", kp); put("deadband", deadbandMa); put("step", stepMa)
         put("in9v", in9vMa); put("in5v", in5vMa)
+        put("cp_en", if (cpEnable) 1 else 0)
+        put("cp_mw", cpEnterMw)
+        put("cp_vbat", cpVbatMaxMv)
         put("mode", mode.wire)
     }
 
@@ -103,10 +130,13 @@ data class BypassTuning(
             targetMa = o.optInt("target", 0),
             fccMaxMa = o.optInt("fcc_max", 3_000),
             kp = o.optInt("kp", 15),
-            deadbandMa = o.optInt("deadband", 5),
-            stepMa = o.optInt("step", 30),
+            deadbandMa = o.optInt("deadband", 30),
+            stepMa = o.optInt("step", 50),
             in9vMa = o.optInt("in9v", 3_000),
             in5vMa = o.optInt("in5v", 3_000),
+            cpEnable = o.optInt("cp_en", 1) != 0,
+            cpEnterMw = o.optInt("cp_mw", 12_000),
+            cpVbatMaxMv = o.optInt("cp_vbat", 4_450),
             mode = BypassMode.fromWire(o.optInt("mode", BypassMode.AUTO.wire)),
         )
     }
@@ -136,6 +166,10 @@ object ChargingEnvelope {
     const val IIN_MAX_MA = 8_000
     const val ITERM_MIN_MA = 50
     const val ITERM_MAX_MA = 6_000
+    const val CP_ENTER_MIN_MW = 6_000
+    const val CP_ENTER_MAX_MW = 25_000
+    const val CP_VBAT_MIN_MV = 4_200
+    const val CP_VBAT_MAX_MV = 4_480
 
     /** Vendor policy defaults (kernel power-on). Profiles without an explicit
      *  [PolicyEnvelope] run inside these. */
@@ -335,6 +369,7 @@ data class ChargingPolicy(
             inputMa = caps.inputMa.mapValues { (_, v) -> v.coerceIn(0, ChargingEnvelope.IIN_MAX_MA) },
             chargeMa = caps.chargeMa.mapValues { (_, v) -> v.coerceIn(0, ChargingEnvelope.FCC_MAX_MA) },
         ),
+        bypass = bypass?.normalized(),
     )
 
     /**

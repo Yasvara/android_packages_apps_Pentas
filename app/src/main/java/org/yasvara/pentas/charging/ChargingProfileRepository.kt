@@ -125,6 +125,28 @@ class ChargingProfileRepository @Inject constructor(
                 errors.add("Ladder level ${row.level}: expected ${ThermalLadderRow.COLS} currents")
             }
         }
+        policy.bypass?.let { b ->
+            if (b.cpEnterMw !in ChargingEnvelope.CP_ENTER_MIN_MW..ChargingEnvelope.CP_ENTER_MAX_MW) {
+                errors.add(
+                    "CP-Bypass threshold ${b.cpEnterMw} mW outside " +
+                        "${ChargingEnvelope.CP_ENTER_MIN_MW}..${ChargingEnvelope.CP_ENTER_MAX_MW} mW"
+                )
+            }
+            if (b.cpVbatMaxMv !in ChargingEnvelope.CP_VBAT_MIN_MV..ChargingEnvelope.CP_VBAT_MAX_MV) {
+                errors.add(
+                    "CP-Bypass max Vbat ${b.cpVbatMaxMv} mV outside " +
+                        "${ChargingEnvelope.CP_VBAT_MIN_MV}..${ChargingEnvelope.CP_VBAT_MAX_MV} mV"
+                )
+            }
+            if (b.deadbandMa !in 0..500) errors.add("Bypass deadband ${b.deadbandMa} mA outside 0..500")
+            if (b.stepMa !in 1..1000) errors.add("Bypass step ${b.stepMa} mA outside 1..1000")
+            if (b.in9vMa !in 0..ChargingEnvelope.IIN_MAX_MA) {
+                errors.add("Bypass 9V input ${b.in9vMa} mA exceeds ${ChargingEnvelope.IIN_MAX_MA} mA")
+            }
+            if (b.in5vMa !in 0..ChargingEnvelope.IIN_MAX_MA) {
+                errors.add("Bypass 5V input ${b.in5vMa} mA exceeds ${ChargingEnvelope.IIN_MAX_MA} mA")
+            }
+        }
         return errors
     }
 
@@ -244,6 +266,18 @@ class ChargingProfileRepository @Inject constructor(
     fun applyActiveProfile(foregroundPkg: String?) {
         val id = resolveActiveProfileId(foregroundPkg)
         applyToDaemon(id?.let { getById(it) })
+    }
+
+    /**
+     * Keep `Settings.System` bypass toggle in sync when the user activates a profile
+     * that explicitly defines a bypass mode, so Settings, Overlay and List UI agree.
+     */
+    fun syncBypassSetting(profile: CustomChargingProfile?) {
+        val mode = profile?.policy?.bypass?.mode?.wire ?: return
+        Settings.System.putIntForUser(
+            context.contentResolver, ThermalProfiles.KEY_BYPASS_CHARGING,
+            mode, UserHandle.USER_CURRENT,
+        )
     }
 
     /**

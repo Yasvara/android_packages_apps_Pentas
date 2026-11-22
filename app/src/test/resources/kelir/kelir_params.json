@@ -1,0 +1,633 @@
+[
+  {
+    "name": "Brightness/Contrast",
+    "band": "colour",
+    "style": false,
+    "params": [
+      {
+        "name": "Exposure",
+        "choices": 0,
+        "lo": -2,
+        "default": 0,
+        "hi": 2,
+        "needs": -1
+      },
+      {
+        "name": "Contrast",
+        "choices": 0,
+        "lo": -1,
+        "default": 0,
+        "hi": 1,
+        "needs": -1
+      },
+      {
+        "name": "Highlights",
+        "choices": 0,
+        "lo": -1,
+        "default": 0,
+        "hi": 1,
+        "needs": -1
+      },
+      {
+        "name": "Shadows",
+        "choices": 0,
+        "lo": -1,
+        "default": 0,
+        "hi": 1,
+        "needs": -1
+      },
+      {
+        "name": "Gamma",
+        "choices": 0,
+        "lo": 0.5,
+        "default": 1,
+        "hi": 2,
+        "needs": -1
+      }
+    ]
+  },
+  {
+    "name": "Color",
+    "band": "colour",
+    "style": false,
+    "params": [
+      {
+        "name": "Temperature",
+        "choices": 0,
+        "lo": -1,
+        "default": 0,
+        "hi": 1,
+        "needs": -1
+      },
+      {
+        "name": "Tint",
+        "choices": 0,
+        "lo": -1,
+        "default": 0,
+        "hi": 1,
+        "needs": -1
+      },
+      {
+        "name": "Hue",
+        "choices": 0,
+        "lo": -180,
+        "default": 0,
+        "hi": 180,
+        "needs": -1
+      },
+      {
+        "name": "Saturation",
+        "choices": 0,
+        "lo": -1,
+        "default": 0,
+        "hi": 1,
+        "needs": -1
+      },
+      {
+        "name": "Vibrance",
+        "choices": 0,
+        "lo": -1,
+        "default": 0,
+        "hi": 1,
+        "needs": -1
+      },
+      {
+        "name": "Tint colour",
+        "choices": 0,
+        "lo": 0,
+        "default": 0,
+        "hi": 360,
+        "needs": 6
+      },
+      {
+        "name": "Tint intensity",
+        "choices": 0,
+        "lo": 0,
+        "default": 0,
+        "hi": 1,
+        "needs": -1
+      }
+    ]
+  },
+  {
+    "name": "Levels",
+    "band": "colour",
+    "style": false,
+    "params": [
+      {
+        "name": "Black",
+        "choices": 0,
+        "lo": 0,
+        "default": 0,
+        "hi": 0.5,
+        "needs": -1
+      },
+      {
+        "name": "White",
+        "choices": 0,
+        "lo": 0.5,
+        "default": 1,
+        "hi": 1,
+        "needs": -1
+      },
+      {
+        "name": "Midtones",
+        "choices": 0,
+        "lo": 0.5,
+        "default": 1,
+        "hi": 2,
+        "needs": -1
+      },
+      {
+        "name": "Brightness",
+        "choices": 0,
+        "lo": -0.5,
+        "default": 0,
+        "hi": 0.5,
+        "needs": -1
+      }
+    ]
+  },
+  {
+    "name": "Black & White",
+    "band": "colour",
+    "style": false,
+    "params": []
+  },
+  {
+    "name": "Sepia",
+    "band": "colour",
+    "style": false,
+    "params": []
+  },
+  {
+    "name": "Night Mode",
+    "band": "colour",
+    "style": false,
+    "params": []
+  },
+  {
+    "name": "Colorblind",
+    "band": "colour",
+    "style": false,
+    "params": [
+      {
+        "name": "Type",
+        "choices": 3,
+        "lo": 0,
+        "default": 0,
+        "hi": 0,
+        "needs": -1
+      }
+    ]
+  },
+  {
+    "name": "Sharpen",
+    "band": "detail",
+    "style": false,
+    "params": [
+      {
+        "name": "Ignore film grain",
+        "choices": 0,
+        "lo": 0,
+        "default": 0,
+        "hi": 1,
+        "needs": -1
+      },
+      {
+        "name": "Quality",
+        "choices": 2,
+        "lo": 0,
+        "default": 0,
+        "hi": 0,
+        "needs": -1
+      }
+    ]
+  },
+  {
+    "name": "Details",
+    "band": "detail",
+    "style": false,
+    "params": [
+      {
+        "name": "Clarity",
+        "choices": 0,
+        "lo": -1,
+        "default": 0,
+        "hi": 1,
+        "needs": -1
+      },
+      {
+        "name": "HDR toning",
+        "choices": 0,
+        "lo": 0,
+        "default": 0,
+        "hi": 1,
+        "needs": -1
+      },
+      {
+        "name": "Bloom",
+        "choices": 0,
+        "lo": 0,
+        "default": 0,
+        "hi": 1,
+        "needs": -1
+      },
+      {
+        "name": "Bloom threshold",
+        "choices": 0,
+        "lo": 0.2,
+        "default": 0.75,
+        "hi": 1,
+        "needs": 2
+      }
+    ]
+  },
+  {
+    "name": "Tilt-Shift",
+    "band": "detail",
+    "style": false,
+    "params": [
+      {
+        "name": "Shape",
+        "choices": 2,
+        "lo": 0,
+        "default": 0,
+        "hi": 0,
+        "needs": -1
+      },
+      {
+        "name": "Position",
+        "choices": 0,
+        "lo": 0,
+        "default": 0.5,
+        "hi": 1,
+        "needs": -1
+      },
+      {
+        "name": "Size",
+        "choices": 0,
+        "lo": 0.05,
+        "default": 0.3,
+        "hi": 1,
+        "needs": -1
+      },
+      {
+        "name": "Softness",
+        "choices": 0,
+        "lo": 0,
+        "default": 0.5,
+        "hi": 1,
+        "needs": -1
+      },
+      {
+        "name": "Angle",
+        "choices": 0,
+        "lo": -90,
+        "default": 0,
+        "hi": 90,
+        "needs": -1
+      },
+      {
+        "name": "Blur",
+        "choices": 0,
+        "lo": 0,
+        "default": 0.5,
+        "hi": 1,
+        "needs": -1
+      }
+    ]
+  },
+  {
+    "name": "Painterly",
+    "band": "detail",
+    "style": true,
+    "params": [
+      {
+        "name": "Brush",
+        "choices": 0,
+        "lo": 0,
+        "default": 0.5,
+        "hi": 1,
+        "needs": -1
+      },
+      {
+        "name": "Detail",
+        "choices": 0,
+        "lo": 0,
+        "default": 0.5,
+        "hi": 1,
+        "needs": -1
+      }
+    ]
+  },
+  {
+    "name": "Watercolor",
+    "band": "detail",
+    "style": true,
+    "params": [
+      {
+        "name": "Blurriness",
+        "choices": 0,
+        "lo": 0,
+        "default": 0.5,
+        "hi": 1,
+        "needs": -1
+      },
+      {
+        "name": "Fuzziness",
+        "choices": 0,
+        "lo": 0,
+        "default": 0.5,
+        "hi": 1,
+        "needs": -1
+      },
+      {
+        "name": "Pencil detail",
+        "choices": 0,
+        "lo": 0,
+        "default": 0.5,
+        "hi": 1,
+        "needs": -1
+      },
+      {
+        "name": "Pencil intensity",
+        "choices": 0,
+        "lo": 0,
+        "default": 0.5,
+        "hi": 1,
+        "needs": -1
+      }
+    ]
+  },
+  {
+    "name": "Vignette",
+    "band": "screen",
+    "style": false,
+    "params": [
+      {
+        "name": "Size",
+        "choices": 0,
+        "lo": 0,
+        "default": 0.5,
+        "hi": 1,
+        "needs": -1
+      },
+      {
+        "name": "Roundness",
+        "choices": 0,
+        "lo": 0,
+        "default": 0.5,
+        "hi": 1,
+        "needs": -1
+      }
+    ]
+  },
+  {
+    "name": "Film Grain",
+    "band": "screen",
+    "style": false,
+    "params": [
+      {
+        "name": "Size",
+        "choices": 0,
+        "lo": 0.5,
+        "default": 1,
+        "hi": 3,
+        "needs": -1
+      },
+      {
+        "name": "Colour",
+        "choices": 0,
+        "lo": 0,
+        "default": 0,
+        "hi": 1,
+        "needs": -1
+      }
+    ]
+  },
+  {
+    "name": "Letterbox",
+    "band": "screen",
+    "style": false,
+    "params": [
+      {
+        "name": "Aspect",
+        "choices": 0,
+        "lo": 1.33,
+        "default": 2.39,
+        "hi": 3,
+        "needs": -1
+      }
+    ]
+  },
+  {
+    "name": "Old Film",
+    "band": "screen",
+    "style": false,
+    "params": [
+      {
+        "name": "Dust",
+        "choices": 0,
+        "lo": 0,
+        "default": 0.5,
+        "hi": 1,
+        "needs": -1
+      },
+      {
+        "name": "Scratches",
+        "choices": 0,
+        "lo": 0,
+        "default": 0.5,
+        "hi": 1,
+        "needs": -1
+      },
+      {
+        "name": "Flicker",
+        "choices": 0,
+        "lo": 0,
+        "default": 0.3,
+        "hi": 1,
+        "needs": -1
+      }
+    ]
+  },
+  {
+    "name": "Retro",
+    "band": "screen",
+    "style": false,
+    "params": [
+      {
+        "name": "Pixel size",
+        "choices": 0,
+        "lo": 1,
+        "default": 4,
+        "hi": 16,
+        "needs": -1
+      },
+      {
+        "name": "Colour levels",
+        "choices": 0,
+        "lo": 2,
+        "default": 8,
+        "hi": 32,
+        "needs": -1
+      },
+      {
+        "name": "Scanlines",
+        "choices": 0,
+        "lo": 0,
+        "default": 0.5,
+        "hi": 1,
+        "needs": -1
+      }
+    ]
+  },
+  {
+    "name": "Halftone",
+    "band": "screen",
+    "style": false,
+    "params": [
+      {
+        "name": "Dot size",
+        "choices": 0,
+        "lo": 2,
+        "default": 6,
+        "hi": 16,
+        "needs": -1
+      },
+      {
+        "name": "Ink",
+        "choices": 2,
+        "lo": 0,
+        "default": 0,
+        "hi": 0,
+        "needs": -1
+      }
+    ]
+  },
+  {
+    "name": "Ambient occlusion",
+    "band": "scene",
+    "style": false,
+    "params": [
+      {
+        "name": "Radius",
+        "choices": 0,
+        "lo": 0.1,
+        "default": 0.6,
+        "hi": 3,
+        "needs": -1
+      }
+    ]
+  },
+  {
+    "name": "Depth fog",
+    "band": "scene",
+    "style": false,
+    "params": [
+      {
+        "name": "Start",
+        "choices": 0,
+        "lo": 0,
+        "default": 30,
+        "hi": 500,
+        "needs": -1
+      },
+      {
+        "name": "Density",
+        "choices": 0,
+        "lo": 0,
+        "default": 0.3,
+        "hi": 1,
+        "needs": -1
+      },
+      {
+        "name": "Hue",
+        "choices": 0,
+        "lo": 0,
+        "default": 210,
+        "hi": 360,
+        "needs": -1
+      },
+      {
+        "name": "Saturation",
+        "choices": 0,
+        "lo": 0,
+        "default": 0.15,
+        "hi": 1,
+        "needs": -1
+      },
+      {
+        "name": "Brightness",
+        "choices": 0,
+        "lo": 0,
+        "default": 0.85,
+        "hi": 1,
+        "needs": -1
+      }
+    ]
+  },
+  {
+    "name": "Depth of field",
+    "band": "scene",
+    "style": false,
+    "params": [
+      {
+        "name": "Focus",
+        "choices": 2,
+        "lo": 0,
+        "default": 0,
+        "hi": 0,
+        "needs": -1
+      },
+      {
+        "name": "Distance",
+        "choices": 0,
+        "lo": 0.3,
+        "default": 10,
+        "hi": 300,
+        "needs": 0
+      },
+      {
+        "name": "Blur",
+        "choices": 0,
+        "lo": 0,
+        "default": 0.5,
+        "hi": 1,
+        "needs": -1
+      },
+      {
+        "name": "Range",
+        "choices": 0,
+        "lo": 0,
+        "default": 0.3,
+        "hi": 1,
+        "needs": -1
+      }
+    ]
+  },
+  {
+    "name": "Global illumination",
+    "band": "scene",
+    "style": false,
+    "params": [
+      {
+        "name": "Reach",
+        "choices": 0,
+        "lo": 0.5,
+        "default": 4,
+        "hi": 20,
+        "needs": -1
+      },
+      {
+        "name": "Bounce",
+        "choices": 0,
+        "lo": 0,
+        "default": 1,
+        "hi": 3,
+        "needs": -1
+      }
+    ]
+  }
+]

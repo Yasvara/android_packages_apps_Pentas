@@ -1,0 +1,55 @@
+{
+  "revision": 9,
+  "peek": false,
+  "split": false,
+  "inspect": false,
+  "split_x": 0.0,
+  "detail": [],
+  "colour": [
+    {
+      "kind": "Brightness/Contrast",
+      "intensity": 1.0,
+      "values": [
+        0.0,
+        -0.250008,
+        0.0,
+        0.0,
+        1.0
+      ]
+    }
+  ],
+  "screen": [
+    {
+      "kind": "Vignette",
+      "intensity": 0.6,
+      "values": [
+        0.700003,
+        1.0
+      ]
+    },
+    {
+      "kind": "Film Grain",
+      "intensity": 0.500008,
+      "values": [
+        2.000031,
+        0.299997
+      ]
+    },
+    {
+      "kind": "Letterbox",
+      "intensity": 1.0,
+      "values": [
+        2.39
+      ]
+    },
+    {
+      "kind": "Retro",
+      "intensity": 1.0,
+      "values": [
+        5.999939,
+        3.999939,
+        0.799997
+      ]
+    }
+  ]
+}

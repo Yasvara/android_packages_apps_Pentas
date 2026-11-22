@@ -1,0 +1,51 @@
+{
+  "revision": 8,
+  "peek": false,
+  "split": false,
+  "inspect": false,
+  "split_x": 0.0,
+  "detail": [
+    {
+      "kind": "Sharpen",
+      "intensity": 0.700008,
+      "values": [
+        0.500015,
+        1.0
+      ]
+    },
+    {
+      "kind": "Details",
+      "intensity": 1.0,
+      "values": [
+        0.400006,
+        0.0,
+        0.299997,
+        0.600008
+      ]
+    },
+    {
+      "kind": "Painterly",
+      "intensity": 1.0,
+      "values": [
+        0.799997,
+        0.200003
+      ]
+    }
+  ],
+  "colour": [
+    {
+      "kind": "Color",
+      "intensity": 1.0,
+      "values": [
+        0.0,
+        0.0,
+        0.0,
+        0.250008,
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  ],
+  "screen": []
+}

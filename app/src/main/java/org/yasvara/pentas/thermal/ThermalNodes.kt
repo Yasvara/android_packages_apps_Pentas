@@ -52,10 +52,14 @@ object ThermalNodes {
         "/sys/class/xm_power/charger/smart_charge/bypass_charge_state"
 
     // Live regulator tuning: write "<key> <value>", read back the whole set.
-    // Keys: target fcc_max kp deadband step in9v in5v. Kernel clamps every
-    // write, so a bad value is refused rather than applied.
+    // Keys: target fcc_max kp deadband step in9v in5v cp_en cp_mw cp_vbat.
+    // Kernel clamps every write, so a bad value is refused rather than applied.
     const val BYPASS_PARAMS =
         "/sys/class/xm_power/charger/smart_charge/bypass_params"
+
+    // SC8581 charge pump live telemetry (die temp °C, VFC switching freq kHz).
+    const val CP_TDIE = "/sys/class/xm_power/cp_master/tdie"
+    const val CP_FSW = "/sys/class/xm_power/cp_master/fsw"
 
     const val BYPASS_MODE_OFF = 0
     const val BYPASS_MODE_FORCE = 1
@@ -64,10 +68,13 @@ object ThermalNodes {
     /** Mirrors enum mca_bypass_chg_state in mca_smart_charge.h. */
     const val BYPASS_ST_IDLE = 0
     const val BYPASS_ST_ACTIVE = 1
-    /** Not entered by the current kernel. */
     const val BYPASS_ST_DEFICIT = 2
     /** Regulator at its ceiling and the pack still draining: the input cannot carry the load. */
     const val BYPASS_ST_ASSIST = 3
+    /** Pack is full while bypass holds VSYS on the adapter. */
+    const val BYPASS_ST_FULL = 4
+    /** SC8581 DIV2 direct-drive CP-Bypass (>12W load on PPS, ~98% efficiency). */
+    const val BYPASS_ST_CP_BYPASS = 5
 
     // ── Display (mi_display .ko) ────────────────────────────────────────────
     const val DISP_PARAM = "/sys/class/mi_display/disp-DSI-0/disp_param"

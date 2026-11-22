@@ -54,6 +54,8 @@ private data class Pack(
     val bypassMode: Int,
     val bypassState: Int,
     val bypassDrainMa: Int,
+    val cpDieC: Int?,
+    val cpFswKhz: Int?,
 ) {
     val watts get() = abs(currentUa / 1e6f * voltageUv / 1e6f)
     val charging get() = currentUa > 0
@@ -86,6 +88,8 @@ private fun readPack(): Pack {
         bypassMode = KernelNodeIO.readInt(ThermalNodes.BYPASS_CHARGE) ?: 0,
         bypassState = state.getOrElse(0) { 0 },
         bypassDrainMa = state.getOrElse(1) { 0 },
+        cpDieC = if (u["ONLINE"]?.trim() == "1") KernelNodeIO.readInt(ThermalNodes.CP_TDIE)?.takeIf { it in 1..150 } else null,
+        cpFswKhz = if (u["ONLINE"]?.trim() == "1") KernelNodeIO.readInt(ThermalNodes.CP_FSW)?.takeIf { it in 100..2000 } else null,
     )
 }
 
@@ -124,14 +128,23 @@ fun BatteryPage() {
             p.adapter?.let { SettingRow("Adapter", value = it) }
         }
         if (p.bypassMode != ThermalNodes.BYPASS_MODE_OFF) Block(padding = 10.dp) {
-            SettingRow("Bypass", value = when (p.bypassMode) { ThermalNodes.BYPASS_MODE_FORCE -> "Always"; else -> "Auto" })
+            SettingRow("Bypass", value = when (p.bypassMode) { ThermalNodes.BYPASS_MODE_FORCE -> "Always"; else -> "Games" })
             SettingRow("State", value = when (p.bypassState) {
-                ThermalNodes.BYPASS_ST_ACTIVE -> "Active"
+                ThermalNodes.BYPASS_ST_CP_BYPASS -> "CP Direct (98%)"
+                ThermalNodes.BYPASS_ST_ACTIVE -> "Buck Active"
+                ThermalNodes.BYPASS_ST_DEFICIT -> "Deficit"
                 ThermalNodes.BYPASS_ST_ASSIST -> "Assist"
-                4 -> "Full"
-                else -> "Idle"
+                ThermalNodes.BYPASS_ST_FULL -> "Full"
+                else -> "Standby"
             })
             SettingRow("Pack", value = if (p.bypassDrainMa > 0) "−${p.bypassDrainMa} mA" else "+${-p.bypassDrainMa} mA")
+            if (p.cpDieC != null || p.cpFswKhz != null) {
+                val cpInfo = listOfNotNull(
+                    p.cpDieC?.let { "${it}°C" },
+                    p.cpFswKhz?.let { "${it} kHz" },
+                ).joinToString(" · ")
+                SettingRow("Charge pump", value = cpInfo)
+            }
         }
         Block(padding = 10.dp) {
             SettingRow("Capacity", value = "%.0f / %.0f mAh".format(p.full / 1000.0, p.design / 1000.0))

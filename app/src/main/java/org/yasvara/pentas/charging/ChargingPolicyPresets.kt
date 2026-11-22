@@ -33,10 +33,10 @@ object ChargingPolicyPresets {
         JeitaBand(55, JeitaBand.SENTINEL_HI, 2, 2, 0, 4060, 572),
     )
 
-    /** Stock per-adapter ceilings, from mca.dtsi (onyx overrides none of them). */
+    /** Onyx per-adapter ceilings, matching onyx-charger-common.dtsi (2 A PD/PPS buck input). */
     val STOCK_CAPS = AdapterCaps(
         inputMa = mapOf(
-            "dcp" to 1500, "pd" to 1600, "pps" to 1500, "hvdcp" to 1200,
+            "dcp" to 1500, "pd" to 2000, "pps" to 2000, "hvdcp" to 1200,
             "hvdcp3" to 1600, "hvdcp3p5" to 1600, "cdp" to 900, "sdp" to 500,
             "float" to 1000,
         ),
@@ -64,16 +64,38 @@ object ChargingPolicyPresets {
             JeitaBand(toC, JeitaBand.SENTINEL_HI, 2, 2, 0, fvMv, iterm)
     }
 
-    /** Stock behaviour, expressed as a profile. Changes nothing. */
+    /** Cool 90 W default: safe JEITA, 2 A PD/PPS buck caps, Hybrid CP-Bypass ready (mode off). */
     fun balanced() = ChargingPolicy(
         jeitaNormal = STOCK_JEITA_NORMAL,
         jeitaFfc = STOCK_JEITA_FFC,
         caps = STOCK_CAPS,
-        bypass = BypassTuning(mode = BypassMode.OFF),
+        bypass = BypassTuning(
+            targetMa = 0, fccMaxMa = 3000, kp = 15, deadbandMa = 30, stepMa = 50,
+            in9vMa = 3000, in5vMa = 3000, cpEnable = true, cpEnterMw = 12_000,
+            cpVbatMaxMv = 4_450, mode = BypassMode.OFF,
+        ),
         dynamics = ChargeDynamics(),
     )
 
-    /** Bypass first: pack at net zero, hot bands open to 55 °C, raised input ceilings. */
+    /** Peak 100 W (22 A) envelope for short cold bursts; auto Hybrid CP-Bypass during games. */
+    fun max100w() = ChargingPolicy(
+        envelope = PolicyEnvelope(fccMaxMa = 22_000, iinMaxMa = 6_000),
+        jeitaNormal = openHotEnd(STOCK_JEITA_NORMAL, fromC = 40, toC = 50, fccMa = 22000, fvMv = 4510),
+        jeitaFfc = openHotEnd(STOCK_JEITA_FFC, fromC = 40, toC = 50, fccMa = 22000, fvMv = 4580),
+        caps = STOCK_CAPS.copy(
+            inputMa = STOCK_CAPS.inputMa + mapOf("pd" to 3000, "pps" to 3000),
+            chargeMa = STOCK_CAPS.chargeMa + mapOf("pd" to 6000, "pps" to 6000),
+            ffcTempHighC = 50,
+        ),
+        bypass = BypassTuning(
+            targetMa = 0, fccMaxMa = 3000, kp = 15, deadbandMa = 30, stepMa = 50,
+            in9vMa = 3000, in5vMa = 3000, cpEnable = true, cpEnterMw = 12_000,
+            cpVbatMaxMv = 4_450, mode = BypassMode.AUTO,
+        ),
+        dynamics = ChargeDynamics(),
+    )
+
+    /** Gaming Hybrid: SC8581 DIV2 CP-Bypass (>12 W PPS) + 3 A Buck ZDFB v3, hot bands open to 55 °C. */
     fun marathon() = ChargingPolicy(
         jeitaNormal = openHotEnd(STOCK_JEITA_NORMAL, fromC = 40, toC = 55, fccMa = 20000, fvMv = 4510),
         jeitaFfc = openHotEnd(STOCK_JEITA_FFC, fromC = 40, toC = 55, fccMa = 20000, fvMv = 4580),
@@ -86,16 +108,17 @@ object ChargingPolicyPresets {
             ffcTempHighC = 55,
         ),
         bypass = BypassTuning(
-            targetMa = 0, fccMaxMa = 3000, kp = 15, deadbandMa = 5, stepMa = 30,
-            in9vMa = 3000, in5vMa = 3000, mode = BypassMode.AUTO,
+            targetMa = 0, fccMaxMa = 3000, kp = 15, deadbandMa = 30, stepMa = 50,
+            in9vMa = 3000, in5vMa = 3000, cpEnable = true, cpEnterMw = 12_000,
+            cpVbatMaxMv = 4_450, mode = BypassMode.AUTO,
         ),
         dynamics = ChargeDynamics(netzero = true, netzeroTargetMa = 0),
     )
 
-    /** No thermal derate and forced bypass, still inside the chemistry envelope. */
+    /** Full 22 A (100 W) silicon envelope with flat derate ladder and Hybrid CP-Bypass in games. */
     fun unrestricted() = ChargingPolicy(
-        // 120 W = 20640 mA @172k. Widen the live kernel envelope first or the
-        // tables below get clamped back to the 20000 power-on default.
+        // 100 W = 22.2 A @222k (single SC8581 silicon limit). Widen the live kernel
+        // envelope first or the tables below get clamped back to the 20 A default.
         envelope = PolicyEnvelope(fccMaxMa = 22_000, iinMaxMa = 6_000),
         jeitaNormal = openHotEnd(STOCK_JEITA_NORMAL, fromC = 40, toC = 58, fccMa = 22000, fvMv = 4510),
         jeitaFfc = openHotEnd(STOCK_JEITA_FFC, fromC = 40, toC = 58, fccMa = 22000, fvMv = 4580),
@@ -112,14 +135,13 @@ object ChargingPolicyPresets {
         // Every rung flat: the ladder still exists, it just stops derating.
         ladder = (1..15).map { ThermalLadderRow.flat(it, inputMa = 4000, packMa = 22000) },
         bypass = BypassTuning(
-            targetMa = 0, fccMaxMa = 4000, kp = 20, deadbandMa = 5, stepMa = 50,
-            in9vMa = 4000, in5vMa = 3000, mode = BypassMode.FORCE,
+            targetMa = 0, fccMaxMa = 4000, kp = 20, deadbandMa = 30, stepMa = 50,
+            in9vMa = 4000, in5vMa = 3000, cpEnable = true, cpEnterMw = 10_000,
+            cpVbatMaxMv = 4_450, mode = BypassMode.AUTO,
         ),
         dynamics = ChargeDynamics(
             netzero = true,
             netzeroTargetMa = 0,
-            // No slew limit and no predictive lookahead: the point of this
-            // profile is that nothing gets in the way of full current.
             slewUa = 0,
             predAheadS = 0,
             predGain = 0,
@@ -127,9 +149,9 @@ object ChargingPolicyPresets {
     )
 
     enum class Preset(val label: String, val summary: String) {
-        BALANCED("Balanced", "Stock Xiaomi policy, unchanged"),
-        MARATHON("Marathon", "Gaming: bypass first, hot bands open to 55 °C"),
-        UNRESTRICTED("Unrestricted", "No thermal derate — full current to the safety envelope");
+        BALANCED("Balanced", "Cool 90 W default, safe JEITA"),
+        MARATHON("Gaming Hybrid", "SC8581 CP-Bypass (>12 W) + 55 °C JEITA"),
+        UNRESTRICTED("Max 100 W", "22 A envelope, flat ladder, CP-Bypass");
 
         fun build(): ChargingPolicy = when (this) {
             BALANCED -> balanced()

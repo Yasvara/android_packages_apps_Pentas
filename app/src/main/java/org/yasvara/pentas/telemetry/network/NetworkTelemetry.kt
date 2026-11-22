@@ -4,33 +4,28 @@
  */
 package org.yasvara.pentas.telemetry.network
 
-import android.content.Context
-import androidx.compose.runtime.MutableState
+import kotlinx.coroutines.flow.StateFlow
+import org.yasvara.pentas.telemetry.NetSnapshot
+import org.yasvara.pentas.telemetry.TelemetryBus
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Single owner for ping + speed (Phase-1 item pulled forward because
- * TileRepository depends on it). One start()/stop() pair; the two underlying
- * monitors keep their loops for now — merging into one ticker is a follow-up.
+ * Zero-overhead network telemetry facade backed directly by native Rust `pantaud`
+ * (`TelemetryBus.netSnapshot` — zero background coroutines, zero duplicate state copies,
+ * zero `ping` subprocesses!).
  */
 @Singleton
-class NetworkTelemetry @Inject constructor() {
+class NetworkTelemetry @Inject constructor(
+    private val bus: TelemetryBus,
+) {
+    val snapshot: StateFlow<NetSnapshot> get() = bus.netSnapshot
 
-    private val ping = NetworkPingMonitor()
-    private val speed = NetworkSpeedMonitor()
-
-    val latencyMs: MutableState<Int> get() = ping.latencyMs
-    val allServerPings: MutableState<List<Pair<String, Int>>> get() = ping.allServerPings
-    val rxSpeedKbps: MutableState<Float> get() = speed.rxSpeedKbps
-    val txSpeedKbps: MutableState<Float> get() = speed.txSpeedKbps
-
-    fun start(context: Context, gameUid: Int) {
-        ping.start(context, gameUid)
-        speed.start(gameUid)
+    fun start() {
+        // `pantaud` samples `/proc/net/dev` + passive TCP RTT strictly on demand via TelemetryBus.
     }
+
     fun stop() {
-        ping.stop()
-        speed.stop()
+        // Retains warm StateFlow snapshot until next observation; no threads or sockets to close.
     }
 }

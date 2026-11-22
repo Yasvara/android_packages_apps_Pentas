@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: The Yasvara Project
+# SPDX-License-Identifier: Apache-2.0
+#
+# framefx: system_server's channel broker for Pentas's per-game Luwes and Kelir
+# settings, and the arming markers the graphics loaders of every app process test at start.
+
+# yasvara_framefx: games open their channel, Pentas (system_app) writes sections.
+type yasvara_framefx_service, app_api_service, system_server_service, service_manager_type;
+
+# /data/misc/framefx/armed/<uid>: one empty marker per armed uid. The broker makes both
+# directories at boot.
+type framefx_data_file, file_type, data_file_type, core_data_file_type;
+type_transition system_server system_data_file:dir framefx_data_file "framefx";
+
+allow system_server framefx_data_file:dir create_dir_perms;
+allow system_server framefx_data_file:file create_file_perms;
+
+# The marker test is an access(F_OK): path lookup, no access to the file itself.
+allow appdomain framefx_data_file:dir search;

@@ -32,13 +32,7 @@ allow system_app vendor_sysfs_battery_supply:file r_file_perms;
 # GPU clock frequency (kgsl sysfs)
 allow system_app vendor_sysfs_kgsl_gpuclk:file r_file_perms;
 
-# OSS Pentas touch filter: /sys/devices/virtual/touch/touch_dev/
-# gamespace_touch_{profile,capabilities,stats}.  The kernel applies this to
-# the final point stream before it becomes an Android input event.
-allow system_app sysfs_gamespace_touch:dir r_dir_perms;
-allow system_app sysfs_gamespace_touch:file rw_file_perms;
-
-# Xiaomi touch feature HAL (report rate)
+# Xiaomi touch feature HAL (game mode, edge rejection, orientation)
 typeattribute system_app hal_touchfeature_xiaomi_client;
 allow system_app hal_touchfeature_xiaomi_service:service_manager find;
 binder_call(system_app, hal_touchfeature_xiaomi_default)

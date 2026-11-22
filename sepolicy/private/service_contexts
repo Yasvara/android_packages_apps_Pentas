@@ -1,0 +1,5 @@
+# SPDX-FileCopyrightText: The Yasvara Project
+# SPDX-License-Identifier: Apache-2.0
+
+# framefx channel broker
+yasvara_framefx    u:object_r:yasvara_framefx_service:s0

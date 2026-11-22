@@ -5,19 +5,17 @@
 package org.yasvara.pentas.thermal
 
 import android.content.Context
+import android.os.SystemProperties
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import org.yasvara.pentas.device.DeviceProfile
 import org.yasvara.pentas.device.DeviceProfiles
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import javax.inject.Inject
@@ -26,9 +24,10 @@ import javax.inject.Singleton
 /**
  * Per-game and global CPU/GPU clock limits, snapped to the kernel's frequency tables.
  *
- * mi_thermal_engine writes `scaling_max_freq` too and never reads it back, so this class
- * never writes a node it has no setting for, and only re-asserts a ceiling when the node
- * drifts above it. A live thermal throttle is never overridden.
+ * When {@code mi_thermal_engine} is running, user CPU/GPU ceilings are published via
+ * {@code persist.sys.mithermal.user_cpu_caps} and {@code persist.sys.mithermal.user_gpu_cap}
+ * so the native daemon enforces {@code min(thermal_cap, user_cap)} with zero polling and zero
+ * sysfs write races — even across reboots while Pentas stays unloaded at 0 KB.
  */
 @Singleton
 class PerfTuner @Inject constructor(@ApplicationContext context: Context) {
@@ -239,17 +238,41 @@ class PerfTuner @Inject constructor(@ApplicationContext context: Context) {
         }
     }
 
+    private fun isThermalDaemonRunning(): Boolean =
+        SystemProperties.get("init.svc.mi_thermal_engine", "") == "running"
+
     private fun applyProfile(profile: PerfProfile) {
+        val daemonOwned = isThermalDaemonRunning()
+
+        // Publish ceilings to mi_thermal_engine first so it owns min(thermal, user) race-free
+        // and persists global ceilings across reboots with zero persistent Pentas process.
+        val cpuCaps = LongArray(4)
         cpuClusters.forEach { cluster ->
             val tuning = profile.clusters[cluster.policyIndex] ?: ClusterTuning()
-            applyRange(
-                minNode = ThermalNodes.cpuScalingMin(cluster.policyDir),
-                maxNode = ThermalNodes.cpuScalingMax(cluster.policyDir),
-                minReq = snap(tuning.minKhz, cluster.availableKhz),
-                maxReq = snap(tuning.maxKhz, cluster.availableKhz),
-                hwMin = cluster.hwMinKhz,
-                hwMax = cluster.hwMaxKhz,
-            )
+            val minReq = snap(tuning.minKhz, cluster.availableKhz)
+            val maxReq = snap(tuning.maxKhz, cluster.availableKhz)
+            if (cluster.slot in 0 until 4) {
+                cpuCaps[cluster.slot] = maxReq ?: 0L
+            }
+            if (daemonOwned) {
+                // Only manage min_freq/governor directly; apply immediate cap-down if above req.
+                applyNode(ThermalNodes.cpuScalingMin(cluster.policyDir), minReq, cluster.hwMinKhz)
+                if (maxReq != null) {
+                    val liveMax = KernelNodeIO.readLong(ThermalNodes.cpuScalingMax(cluster.policyDir))
+                    if (liveMax != null && liveMax > maxReq) {
+                        KernelNodeIO.write(ThermalNodes.cpuScalingMax(cluster.policyDir), maxReq)
+                    }
+                }
+            } else {
+                applyRange(
+                    minNode = ThermalNodes.cpuScalingMin(cluster.policyDir),
+                    maxNode = ThermalNodes.cpuScalingMax(cluster.policyDir),
+                    minReq = minReq,
+                    maxReq = maxReq,
+                    hwMin = cluster.hwMinKhz,
+                    hwMax = cluster.hwMaxKhz,
+                )
+            }
             applyGovernor(
                 node = ThermalNodes.cpuGovernor(cluster.policyDir),
                 requested = tuning.governor,
@@ -257,36 +280,53 @@ class PerfTuner @Inject constructor(@ApplicationContext context: Context) {
                 supported = cluster.governors,
             )
         }
+        SystemProperties.set(PROP_USER_CPU_CAPS, cpuCaps.joinToString(","))
 
         if (gpuInfo.availableHz.isNotEmpty()) {
             val minHz = snap(profile.gpuMinHz, gpuInfo.availableHz)
             val maxHz = snap(profile.gpuMaxHz, gpuInfo.availableHz)
-            applyRange(
-                minNode = ThermalNodes.GPU_DEVFREQ_MIN,
-                maxNode = ThermalNodes.GPU_DEVFREQ_MAX,
-                minReq = minHz,
-                maxReq = maxHz,
-                hwMin = gpuInfo.hwMinHz,
-                hwMax = gpuInfo.hwMaxHz,
-            )
-            // kgsl MHz mirrors keep the vendor pwrlevel logic consistent
-            applyRange(
-                minNode = ThermalNodes.GPU_MIN_CLOCK_MHZ,
-                maxNode = ThermalNodes.GPU_MAX_CLOCK_MHZ,
-                minReq = minHz?.div(1_000_000),
-                maxReq = maxHz?.div(1_000_000),
-                hwMin = gpuInfo.hwMinHz / 1_000_000,
-                hwMax = gpuInfo.hwMaxHz / 1_000_000,
-            )
+            SystemProperties.set(PROP_USER_GPU_CAP, (maxHz ?: 0L).toString())
+            if (daemonOwned) {
+                applyNode(ThermalNodes.GPU_DEVFREQ_MIN, minHz, gpuInfo.hwMinHz)
+                applyNode(
+                    ThermalNodes.GPU_MIN_CLOCK_MHZ,
+                    minHz?.div(1_000_000),
+                    gpuInfo.hwMinHz / 1_000_000,
+                )
+                if (maxHz != null) {
+                    val liveMax = KernelNodeIO.readLong(ThermalNodes.GPU_DEVFREQ_MAX)
+                    if (liveMax != null && liveMax > maxHz) {
+                        KernelNodeIO.write(ThermalNodes.GPU_DEVFREQ_MAX, maxHz)
+                    }
+                }
+            } else {
+                applyRange(
+                    minNode = ThermalNodes.GPU_DEVFREQ_MIN,
+                    maxNode = ThermalNodes.GPU_DEVFREQ_MAX,
+                    minReq = minHz,
+                    maxReq = maxHz,
+                    hwMin = gpuInfo.hwMinHz,
+                    hwMax = gpuInfo.hwMaxHz,
+                )
+                // kgsl MHz mirrors keep the vendor pwrlevel logic consistent
+                applyRange(
+                    minNode = ThermalNodes.GPU_MIN_CLOCK_MHZ,
+                    maxNode = ThermalNodes.GPU_MAX_CLOCK_MHZ,
+                    minReq = minHz?.div(1_000_000),
+                    maxReq = maxHz?.div(1_000_000),
+                    hwMin = gpuInfo.hwMinHz / 1_000_000,
+                    hwMax = gpuInfo.hwMaxHz / 1_000_000,
+                )
+            }
             applyGovernor(
                 node = ThermalNodes.GPU_GOVERNOR,
                 requested = profile.gpuGovernor,
                 hwDefault = gpuInfo.defaultGovernor,
                 supported = gpuInfo.governors,
             )
+        } else {
+            SystemProperties.set(PROP_USER_GPU_CAP, "0")
         }
-
-        syncCeilingGuard(profile)
     }
 
     // ── Node ownership (see the class kdoc for why this matters) ────────────
@@ -348,31 +388,6 @@ class PerfTuner @Inject constructor(@ApplicationContext context: Context) {
         if (KernelNodeIO.read(node) == held) KernelNodeIO.write(node, hwDefault)
     }
 
-    /** Re-asserts user ceilings when the node rises above them; idle when none are set. */
-    private fun syncCeilingGuard(profile: PerfProfile) {
-        val ceilings = buildList {
-            cpuClusters.forEach { cluster ->
-                snap(profile.clusters[cluster.policyIndex]?.maxKhz, cluster.availableKhz)
-                    ?.let { add(ThermalNodes.cpuScalingMax(cluster.policyDir) to it) }
-            }
-            snap(profile.gpuMaxHz, gpuInfo.availableHz)
-                ?.let { add(ThermalNodes.GPU_DEVFREQ_MAX to it) }
-        }
-        guardJob?.cancel()
-        if (ceilings.isEmpty()) return
-        guardJob = scope.launch {
-            while (isActive) {
-                delay(GUARD_INTERVAL_MS)
-                ceilings.forEach { (node, ceiling) ->
-                    val live = KernelNodeIO.readLong(node) ?: return@forEach
-                    if (live > ceiling) KernelNodeIO.write(node, ceiling)
-                }
-            }
-        }
-    }
-
-    private var guardJob: Job? = null
-
     /** Snap a requested frequency to the nearest kernel-supported step. */
     private fun snap(requested: Long?, table: List<Long>): Long? {
         if (requested == null || table.isEmpty()) return requested
@@ -431,12 +446,10 @@ class PerfTuner @Inject constructor(@ApplicationContext context: Context) {
     companion object {
         private const val TAG = "PerfTuner"
 
-        /**
-         * Ceiling re-assert cadence. SS runs at 1 Hz, so 2 s guarantees we see
-         * a release within one extra tick while halving the readback traffic —
-         * and the latency is invisible next to a DVFS ramp.
-         */
-        private const val GUARD_INTERVAL_MS = 2_000L
+        /** Per-cluster user CPU ceiling (kHz CSV, 4 slots, 0 = uncapped) owned by mi_thermal_engine. */
+        const val PROP_USER_CPU_CAPS = "persist.sys.mithermal.user_cpu_caps"
+        /** User GPU ceiling (Hz, 0 = uncapped) owned by mi_thermal_engine. */
+        const val PROP_USER_GPU_CAP = "persist.sys.mithermal.user_gpu_cap"
 
         /**
          * Prefs key for the global baseline. Has no dot, so it can never

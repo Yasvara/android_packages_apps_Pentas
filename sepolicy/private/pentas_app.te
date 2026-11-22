@@ -6,13 +6,17 @@
 
 # IPC with mi_thermal_engine: persist.sys.mithermal.* (mithermal_prop)
 set_prop(system_app, mithermal_prop)
+set_prop(system_server, mithermal_prop)
 
 # Pentas dynamic properties IPC (persist.sys.pentas.*)
 set_prop(system_app, pentas_prop)
+set_prop(system_server, pentas_prop)
 
 # /sys/class/thermal/thermal_message/*, /sys/class/thermal/thermal_zone*/temp
 allow system_app sysfs_thermal:dir r_dir_perms;
 allow system_app sysfs_thermal:file rw_file_perms;
+allow system_server sysfs_thermal:dir r_dir_perms;
+allow system_server sysfs_thermal:file rw_file_perms;
 
 # /sys/devices/system/cpu/cpufreq/policy{0,2,5,7}/scaling_{min,max}_freq + governor
 allow system_app sysfs_devices_system_cpu:dir r_dir_perms;

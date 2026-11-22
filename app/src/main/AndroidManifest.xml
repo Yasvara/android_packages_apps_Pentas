@@ -42,13 +42,12 @@
     <uses-permission android:name="yasvara.permission.MANAGE_SWARA" />
 
     <!--
-        The persistent main process runs only the thermal and clock control plane. Activities
-        and the session sidebar live in ":ui", which system_server binds per session and which
-        is otherwise cached.
+        Non-persistent: thermal policy and touch orientation live in system_server, and
+        mi_thermal_engine enforces user clock caps natively. This process starts only while a
+        game/video session is bound or the user opens Pentas, and stays at 0 KB when idle.
     -->
     <application
         android:name=".Pentas"
-        android:persistent="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/settings_title"
         android:supportsRtl="true"
@@ -56,7 +55,6 @@
         android:enableOnBackInvokedCallback="true">
         
         <activity
-            android:process=":ui"
             android:name=".app.LibraryActivity"
             android:exported="true"
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
@@ -67,61 +65,51 @@
         </activity>
 
         <activity
-            android:process=":ui"
             android:name=".app.SettingsActivity"
             android:exported="true"
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
 
         <activity
-            android:process=":ui"
             android:name=".app.GlobalActivity"
             android:exported="false"
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
 
         <activity
-            android:process=":ui"
             android:name=".app.GameActivity"
             android:exported="false" />
 
         <activity
-            android:process=":ui"
             android:name=".settings.fpsstats.FpsStatsActivity"
             android:exported="false"
             android:theme="@style/PentasTheme" />
 
         <activity
-            android:process=":ui"
             android:name=".settings.fpsstats.FpsStatsDetailActivity"
             android:exported="false"
             android:theme="@style/PentasTheme" />
 
         <activity
-            android:process=":ui"
             android:name=".settings.diagnostics.DiagnosticsActivity"
             android:exported="false"
             android:theme="@style/PentasTheme" />
 
         <activity
-            android:process=":ui"
             android:name=".thermal.custom.CustomProfileListActivity"
             android:exported="false"
             android:theme="@style/PentasTheme" />
 
         <activity
-            android:process=":ui"
             android:name=".thermal.custom.CustomProfileEditorActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/PentasTheme" />
 
         <activity
-            android:process=":ui"
             android:name=".charging.ChargingProfileListActivity"
             android:exported="false"
             android:theme="@style/PentasTheme" />
 
         <activity
-            android:process=":ui"
             android:name=".charging.ChargingProfileEditorActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize"
@@ -130,7 +118,6 @@
         <!-- Bound by system_server once per session; not exported. -->
         <service
             android:name=".session.SessionService"
-            android:process=":ui"
             android:exported="false"
             android:configChanges="orientation|screenSize" />
 

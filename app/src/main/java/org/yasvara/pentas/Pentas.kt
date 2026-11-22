@@ -6,30 +6,22 @@ package org.yasvara.pentas
 
 import android.app.Application
 import android.content.Context
-import android.os.Handler
-import android.os.Looper
 import android.os.Process
-import android.util.Log
 import androidx.core.content.edit
 import dagger.hilt.android.HiltAndroidApp
 import org.yasvara.pentas.cache.AppIconCache
 import org.yasvara.pentas.cache.BannerBitmapCache
-import org.yasvara.pentas.thermal.PerfTuner
-import org.yasvara.pentas.thermal.ThermalController
-import org.yasvara.pentas.touch.TouchOrientationRelay
 import javax.inject.Inject
 
 /**
- * The persistent main process runs only the thermal, clock and touch-orientation control plane;
- * screens and the session sidebar live in ":ui".
+ * On-demand Pentas UI and game-session process. Thermal policy and touch orientation live in
+ * system_server, and user clock caps are persisted to mi_thermal_engine via system properties,
+ * so this process stays unloaded when no game/video session or Pentas screen is open.
  */
 @HiltAndroidApp(Application::class)
 class Pentas : Hilt_Pentas() {
-    @Inject lateinit var thermal: dagger.Lazy<ThermalController>
-    @Inject lateinit var perf: dagger.Lazy<PerfTuner>
     @Inject lateinit var banners: BannerBitmapCache
     @Inject lateinit var icons: AppIconCache
-    @Inject lateinit var touchOrientation: dagger.Lazy<TouchOrientationRelay>
 
     private val recovery by lazy { getSharedPreferences("pentas_recovery", MODE_PRIVATE) }
 
@@ -42,27 +34,6 @@ class Pentas : Hilt_Pentas() {
     override fun onCreate() {
         super.onCreate()
         recovery.edit { putInt(KEY_RESTARTS, 0) }
-        if (getProcessName() != packageName) return
-        thermal.get().start()
-        touchOrientation.get().start()
-        applyGlobalClocks()
-    }
-
-    /**
-     * Applies the global clock baseline. Two boots in a row that die before [STABLE_MS] drop
-     * the baseline, so a bad tuning cannot lock the user out.
-     */
-    private fun applyGlobalClocks() {
-        val attempts = recovery.getInt(KEY_PERF_ATTEMPTS, 0)
-        if (attempts >= 2) {
-            recovery.edit { putInt(KEY_PERF_ATTEMPTS, 0) }
-            perf.get().saveGlobalProfile(PerfTuner.PerfProfile())
-            Log.e(TAG, "Global clocks reset after $attempts unstable boots")
-            return
-        }
-        recovery.edit { putInt(KEY_PERF_ATTEMPTS, attempts + 1) }
-        perf.get().applyGlobal()
-        Handler(Looper.getMainLooper()).postDelayed({ recovery.edit { putInt(KEY_PERF_ATTEMPTS, 0) } }, STABLE_MS)
     }
 
     override fun onTrimMemory(level: Int) {
@@ -70,7 +41,6 @@ class Pentas : Hilt_Pentas() {
         if (level >= TRIM_MEMORY_UI_HIDDEN) {
             banners.evictAll()
             icons.clear()
-            Runtime.getRuntime().gc()
         }
     }
 
@@ -83,9 +53,6 @@ class Pentas : Hilt_Pentas() {
     }
 
     private companion object {
-        const val TAG = "Pentas"
-        const val STABLE_MS = 90_000L
         const val KEY_RESTARTS = "restart_attempts"
-        const val KEY_PERF_ATTEMPTS = "perf_apply_attempts"
     }
 }

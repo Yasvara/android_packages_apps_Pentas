@@ -24,6 +24,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import org.yasvara.pentas.cache.AppIconCache
+import org.yasvara.pentas.cache.BannerBitmapCache
 import org.yasvara.pentas.charging.ChargingProfileRepository
 import org.yasvara.pentas.data.PerAppSettingStore
 import org.yasvara.pentas.data.SettingsIO
@@ -65,6 +67,8 @@ class SessionService : Hilt_SessionService() {
     @Inject lateinit var stats: FpsStatsCollector
     @Inject lateinit var statsRepo: FpsStatsRepository
     @Inject lateinit var io: SettingsIO
+    @Inject lateinit var banners: BannerBitmapCache
+    @Inject lateinit var icons: AppIconCache
 
     private val binder = Binder()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -208,6 +212,8 @@ class SessionService : Hilt_SessionService() {
     override fun onDestroy() {
         runCatching { unregisterReceiver(screenOn) }
         stop()
+        banners.evictAll()
+        icons.clear()
         scope.cancel()
         super.onDestroy()
     }

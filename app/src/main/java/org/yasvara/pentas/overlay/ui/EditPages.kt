@@ -50,25 +50,9 @@ import org.yasvara.pentas.overlay.tiles.TileRegistry
 import org.yasvara.pentas.overlay.tiles.tilePainter
 import org.yasvara.pentas.ui.kit.Block
 import org.yasvara.pentas.ui.kit.Glyph
-import org.yasvara.pentas.ui.kit.Kit
-import org.yasvara.pentas.ui.kit.ListItem
 import org.yasvara.pentas.ui.kit.RoundButton
 import org.yasvara.pentas.ui.kit.Section
 import org.yasvara.pentas.ui.kit.label
-
-@Composable
-fun RecordPage() {
-    val o = LocalOverlay.current
-    SubPage("Record") {
-        listOf(true to "This game", false to "Full screen").forEachIndexed { i, (game, name) ->
-            ListItem(
-                title = name, shape = Kit.connected(i, 2),
-                leading = { Glyph(if (game) R.drawable.sym_videogame_asset else R.drawable.sym_fullscreen, size = 18.dp) },
-                onClick = { o.record.toggle(game); o.state.home() },
-            )
-        }
-    }
-}
 
 /** Pick toggles (top row, five slots) and tools (pages of four) from the pool. */
 @OptIn(ExperimentalLayoutApi::class)

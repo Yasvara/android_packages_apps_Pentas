@@ -49,10 +49,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import org.yasvara.rekam.controls.HideFromCapture
 import org.yasvara.pentas.overlay.capture.GameScreenshotUtil
 import org.yasvara.pentas.overlay.ui.Panel
 import org.yasvara.pentas.overlay.ui.Rail
 import org.yasvara.pentas.session.SidebarMode
+import org.yasvara.pentas.ui.tuning.KelirCompare
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.roundToInt
@@ -134,6 +136,7 @@ class Sidebar @Inject constructor(
         removePanel()
         handleParams.y = handleParams.y.coerceIn(0, screenHeight())
         handle?.let { runCatching { wm.updateViewLayout(it, handleParams) } }
+        overlay.widgets.onConfigurationChanged()
     }
 
     private fun screenHeight() = wm.maximumWindowMetrics.bounds.height() - 96
@@ -212,18 +215,35 @@ class Sidebar @Inject constructor(
         overlay.fps.start()
         overlay.bus.start()
         overlay.media.start()
-        overlay.record.refresh()
+        overlay.record.connect()
         state.home()
         val v = overlayView(context) {
             CompositionLocalProvider(LocalOverlay provides overlay) { PanelWindow() }
         }
-        v.setOnTouchListener { _, e -> if (e.action == MotionEvent.ACTION_OUTSIDE) close(); false }
+        v.setOnTouchListener { _, e ->
+            // Compare and widget drag-edit leave the rest of the screen interactive.
+            if (e.action == MotionEvent.ACTION_OUTSIDE &&
+                !state.comparing.value &&
+                !overlay.widgets.editing.value
+            ) close()
+            false
+        }
+        panelParams.width = WindowManager.LayoutParams.MATCH_PARENT
+        panelParams.height = WindowManager.LayoutParams.MATCH_PARENT
+        panelParams.gravity = Gravity.CENTER
+        panelParams.flags = panelParams.flags or
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
         runCatching {
             Process.setThreadPriority(Process.THREAD_PRIORITY_DISPLAY)
             wm.addView(v, panelParams)
             panel = v
+            overlay.widgets.panelOpen.value = true
             handle?.visibility = View.GONE
-        }.onFailure { releasePanelSources() }
+        }.onFailure {
+            overlay.widgets.panelOpen.value = false
+            releasePanelSources()
+        }
         main.removeCallbacks(goIdle)
     }
 
@@ -244,7 +264,8 @@ class Sidebar @Inject constructor(
         state.keyboard.value = false
         state.reset()
         overlay.widgets.editing.value = false
-        Process.setThreadPriority(Process.THREAD_PRIORITY_DEFAULT)
+        overlay.widgets.panelOpen.value = false
+        if (mode != SidebarMode.MODE_GAME) Process.setThreadPriority(Process.THREAD_PRIORITY_DEFAULT)
         if (pkg != null) { handle?.visibility = View.VISIBLE; scheduleIdle() }
     }
 
@@ -253,21 +274,43 @@ class Sidebar @Inject constructor(
         overlay.fps.dispose()
         overlay.bus.stop()
         overlay.media.stop()
+        overlay.record.disconnect()
     }
 
-    private fun setFocusable(focusable: Boolean) {
+    private fun updatePanelLayout(focusable: Boolean, editWidgets: Boolean, left: Boolean) {
         val v = panel ?: return
-        val f = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-        panelParams.flags = if (focusable) panelParams.flags and f.inv() else panelParams.flags or f
+        val nf = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        val wo = WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+        panelParams.flags = if (focusable) panelParams.flags and nf.inv() else panelParams.flags or nf
+        if (editWidgets) {
+            // Shrink panel to its own bounds so the entire rest of the screen stays open for
+            // grabbing and dragging HUD widgets without intercepting touches or closing the panel!
+            panelParams.width = WindowManager.LayoutParams.WRAP_CONTENT
+            panelParams.height = WindowManager.LayoutParams.WRAP_CONTENT
+            panelParams.gravity = Gravity.CENTER_VERTICAL or if (left) Gravity.START else Gravity.END
+            panelParams.flags = panelParams.flags and wo.inv()
+        } else {
+            panelParams.width = WindowManager.LayoutParams.MATCH_PARENT
+            panelParams.height = WindowManager.LayoutParams.MATCH_PARENT
+            panelParams.gravity = Gravity.CENTER
+            panelParams.flags = panelParams.flags or wo
+        }
         runCatching { wm.updateViewLayout(v, panelParams) }
     }
 
     @androidx.compose.runtime.Composable
     private fun PanelWindow() {
+        // Opening the sidebar during a full-screen recording must not show up in the file.
+        HideFromCapture()
         val left by onLeft
         val shut by closing
         val keyboard by state.keyboard
-        LaunchedEffect(keyboard) { setFocusable(keyboard) }
+        val comparing by state.comparing
+        val editing by overlay.widgets.editing
+        val compactForEdit = editing && !comparing
+        LaunchedEffect(keyboard, compactForEdit, left) {
+            updatePanelLayout(keyboard, compactForEdit, left)
+        }
         val slide = androidx.compose.runtime.remember { Animatable(1f) }
         LaunchedEffect(shut) {
             if (shut) {
@@ -275,19 +318,33 @@ class Sidebar @Inject constructor(
                 main.post { removePanel() }
             } else slide.animateTo(0f, spring(dampingRatio = 0.8f, stiffness = 380f))
         }
+        val game = pkg
+        if (comparing && game != null) {
+            KelirCompare(game, onBack = { state.comparing.value = false }, onDone = { close() })
+            return
+        }
         val height = (LocalConfiguration.current.screenHeightDp - 16).coerceAtMost(388).dp
-        Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { close() } }) {
-            Row(
-                Modifier.align(if (left) Alignment.CenterStart else Alignment.CenterEnd)
-                    .padding(horizontal = 8.dp).height(height)
-                    .graphicsLayer {
-                        translationX = slide.value * 120.dp.toPx() * if (left) -1 else 1
-                        alpha = 1f - slide.value
-                    }
-                    .pointerInput(Unit) { detectTapGestures { } },
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
+        val rowModifier = Modifier
+            .padding(horizontal = 8.dp)
+            .height(height)
+            .graphicsLayer {
+                translationX = slide.value * 120.dp.toPx() * if (left) -1 else 1
+                alpha = 1f - slide.value
+            }
+            .pointerInput(Unit) { detectTapGestures { } }
+
+        if (compactForEdit) {
+            Row(rowModifier, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (left) { Rail(::close); Panel(mode) } else { Panel(mode); Rail(::close) }
+            }
+        } else {
+            Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { close() } }) {
+                Row(
+                    rowModifier.align(if (left) Alignment.CenterStart else Alignment.CenterEnd),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    if (left) { Rail(::close); Panel(mode) } else { Panel(mode); Rail(::close) }
+                }
             }
         }
     }

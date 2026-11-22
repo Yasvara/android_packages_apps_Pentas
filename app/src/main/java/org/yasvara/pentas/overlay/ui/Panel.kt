@@ -57,7 +57,6 @@ fun Panel(mode: Int) {
         ) { p ->
             when (p) {
                 Page.HOME -> Home(mode)
-                Page.MONITOR -> MonitorPage()
                 Page.WIDGETS -> WidgetsPage()
                 Page.TUNER -> Tuner(mode)
                 Page.BATTERY -> BatteryPage()

@@ -10,7 +10,7 @@ import org.yasvara.pentas.data.AppSettings
 import org.yasvara.pentas.data.PerAppSettingStore
 import org.yasvara.pentas.data.SystemSettings
 import org.yasvara.pentas.overlay.brightness.Brightness
-import org.yasvara.pentas.overlay.capture.ScreenRecordController
+import org.yasvara.pentas.overlay.capture.RecordController
 import org.yasvara.pentas.overlay.dock.Shortcuts
 import org.yasvara.pentas.overlay.monitor.WidgetOverlay
 import org.yasvara.pentas.overlay.tiles.TileRegistry
@@ -39,7 +39,7 @@ class Overlay @Inject constructor(
     val touch: GameTouchModeManager,
     val dolby: DolbyController,
     val widgets: WidgetOverlay,
-    val record: ScreenRecordController,
+    val record: RecordController,
     val media: MediaSource,
     val shortcuts: Shortcuts,
     val system: SystemSettings,

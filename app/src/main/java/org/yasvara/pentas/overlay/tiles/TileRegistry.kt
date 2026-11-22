@@ -8,13 +8,15 @@ import android.content.Context
 import androidx.compose.runtime.mutableStateListOf
 import dagger.hilt.android.qualifiers.ApplicationContext
 import org.yasvara.pentas.R
-import org.yasvara.pentas.audio.DolbyBridge
 import org.yasvara.pentas.audio.DolbyController
 import org.yasvara.pentas.data.AppSettings
+import org.yasvara.pentas.kelir.Kelir
+import org.yasvara.pentas.luwes.Luwes
 import org.yasvara.pentas.overlay.OverlayState
 import org.yasvara.pentas.overlay.Page
 import org.yasvara.pentas.overlay.TunerTab
 import org.yasvara.pentas.overlay.capture.ScreenshotUtil
+import org.yasvara.pentas.session.ActiveSessionStore
 import org.yasvara.pentas.touch.GameTouchModeManager
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -31,6 +33,9 @@ class TileRegistry @Inject constructor(
     private val dolby: DolbyController,
     private val touch: GameTouchModeManager,
     private val qsTileCatalog: QsTileCatalog,
+    private val kelir: Kelir,
+    private val luwes: Luwes,
+    private val session: ActiveSessionStore,
 ) {
     private lateinit var all: List<TileAction>
     private val toggleIds = mutableStateListOf<String>()
@@ -72,6 +77,10 @@ class TileRegistry @Inject constructor(
             add(ToggleableTile("super_report", context.getString(R.string.tile_super_touch), R.drawable.sym_touch_app,
                 touch.superReportEnabled, touch::toggleSuperReport) { state.tuner(TunerTab.TOUCH) })
         }
+        if (touch.isAvailable) {
+            add(ToggleableTile("fast_touch", context.getString(R.string.tile_fast_touch), R.drawable.sym_bolt,
+                touch.fastResponse, touch::toggleFastResponse) { state.tuner(TunerTab.TOUCH) })
+        }
         add(DndTile("dnd", context.getString(R.string.tile_dnd), R.drawable.sym_do_not_disturb_on, context))
 
         add(FixedActionTile("screenshot", context.getString(R.string.tile_screenshot), R.drawable.sym_screenshot) {
@@ -82,9 +91,16 @@ class TileRegistry @Inject constructor(
         add(FixedActionTile("widgets", context.getString(R.string.tile_widgets), R.drawable.sym_widgets) {
             state.open(Page.WIDGETS)
         })
+        add(KelirTile("kelir", context.getString(R.string.tile_kelir), R.drawable.sym_palette, kelir,
+            { session.currentPackage }) { state.tuner(TunerTab.KELIR) })
+        add(HideHudTile("hide_hud", context.getString(R.string.tile_hide_hud), R.drawable.sym_visibility_off, luwes,
+            { session.currentPackage }) { restart ->
+            val text = if (restart) R.string.hide_hud_restart else R.string.hide_hud_unavailable
+            android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_SHORT).show()
+        })
         add(ToggleableTile("lock_gesture", context.getString(R.string.tile_lock_gesture), R.drawable.sym_lock,
             state.gestureLock, { state.onGestureLock(it) }))
-        if (DolbyBridge.isAvailable(context)) {
+        if (dolby.isAvailable) {
             add(ToggleableTile("dolby", context.getString(R.string.tile_dolby), R.drawable.sym_graphic_eq,
                 dolby.enabledState, dolby::setEnabled) { state.tuner(TunerTab.SOUND) })
         }
@@ -152,6 +168,6 @@ class TileRegistry @Inject constructor(
     companion object {
         const val TOGGLE_SLOTS = 5
         val DEFAULT_TOGGLES = listOf("wifi", "mobile_data", "bluetooth", "super_report", "dnd")
-        val DEFAULT_TOOLS = listOf("screenshot", "stay_awake", "widgets", "lock_gesture", "dolby", "stats_record")
+        val DEFAULT_TOOLS = listOf("screenshot", "stay_awake", "widgets", "kelir", "hide_hud", "lock_gesture", "dolby", "stats_record", "fast_touch")
     }
 }

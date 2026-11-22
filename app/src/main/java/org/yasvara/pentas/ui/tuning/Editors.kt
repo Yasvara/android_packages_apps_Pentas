@@ -4,6 +4,7 @@
  */
 package org.yasvara.pentas.ui.tuning
 
+import android.provider.Settings
 import android.view.MotionEvent
 import android.view.WindowManager
 import androidx.compose.foundation.Canvas
@@ -43,10 +44,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import org.yasvara.pentas.audio.DolbyBridge
-import org.yasvara.pentas.audio.DolbyProfileClient
 import org.yasvara.pentas.data.AngleDriver
+import org.yasvara.pentas.data.PerAppSettingStore
 import org.yasvara.pentas.thermal.PerfTuner
-import org.yasvara.pentas.touch.KernelTouchFilterClient
+import org.yasvara.pentas.touch.GameTouchModeManager
 import org.yasvara.pentas.touch.RateMeter
 import org.yasvara.pentas.ui.kit.Block
 import org.yasvara.pentas.ui.kit.RangeSlider
@@ -67,6 +68,11 @@ private fun factor(f: Float): String =
     if (abs(f - 1f) < 0.001f) "1.0" else "%.2f".format(f).trimEnd('0').trimEnd('.').let { if ('.' in it) it else "$it.0" }
 
 private val SSAA = listOf(1.25f, 1.5f, 2f)
+// Stops of the slider below, named as upscalers name them.
+private val RENDER_PRESETS = listOf(
+    "Native" to 1f, "Quality" to 0.75f, "Balanced" to 0.65f, "Performance" to 0.5f, "Ultra" to 0.35f,
+)
+private const val ALIH_TARGET = "alih_target_language"
 
 @Composable fun LiveTag() = Tag("Live")
 @Composable fun RestartTag() = Tag("Restart", warn = true)
@@ -87,6 +93,11 @@ fun GraphicsEditor(pkg: String, game: Boolean = true) {
     if (game) Block(padding = 10.dp) {
         SettingRow("Render resolution", tag = { LiveTag() }, value = "%.2f×".format(scale))
         ScaleFigure(scale, screen)
+        Segmented(
+            RENDER_PRESETS,
+            selected = RENDER_PRESETS.firstOrNull { abs(it.second - scale) < 0.005f }?.second ?: 0f,
+            onSelect = ::commit,
+        )
         Slider(min(scale, 1f), { scale = it }, range = 0.25f..1f, steps = 14, onCommit = ::commit)
         SettingRow("Supersampling") {}
         Segmented(
@@ -95,6 +106,9 @@ fun GraphicsEditor(pkg: String, game: Boolean = true) {
             onSelect = { if (it > 1f || scale > 1f) commit(it) },
         )
     }
+    if (game) UpscaleEditor(pkg)
+    if (game) TextureEditor(pkg)
+    if (game) ShadingEditor(pkg)
     Block(padding = 10.dp) {
         var style by remember(pkg) { mutableIntStateOf(t.perApp().displayStyle(pkg)) }
         SettingRow("Display color", tag = { LiveTag() })
@@ -104,6 +118,9 @@ fun GraphicsEditor(pkg: String, game: Boolean = true) {
         )
     }
     if (!game) return
+    LepasEditor(pkg)
+    LuwesEditor(pkg)
+    TranslateEditor(pkg)
     Section("Advanced")
     Block(padding = 10.dp) {
         val angle = t.angle()
@@ -117,6 +134,36 @@ fun GraphicsEditor(pkg: String, game: Boolean = true) {
         }
         var gpuComp by remember(pkg) { mutableStateOf(t.perApp().gpuComposition(pkg)) }
         SwitchRow("GPU composition", gpuComp, { gpuComp = it; t.perApp().setGpuComposition(pkg, it) }, tag = { LiveTag() })
+    }
+}
+
+/** Alih: the game's text in another language, in the game's own draws. Needs Vulkan, so ANGLE for GLES. */
+@Composable
+private fun TranslateEditor(pkg: String) {
+    val t = rememberTuning()
+    val resolver = LocalContext.current.contentResolver
+    val luwes = t.luwes()
+    val angle = t.angle()
+    var on by remember(pkg) { mutableStateOf(luwes.lapis(pkg).textTap) }
+    var target by remember { mutableStateOf(Settings.Global.getString(resolver, ALIH_TARGET).orEmpty()) }
+    Block(padding = 10.dp) {
+        SwitchRow("Translate text", on, { want ->
+            if (luwes.setTextTap(pkg, want)) {
+                on = want
+                if (want && angle.available && angle.get(pkg) == AngleDriver.DEFAULT) {
+                    angle.set(pkg, AngleDriver.ANGLE)
+                }
+            }
+        }, tag = { RestartTag() })
+        if (on) {
+            Segmented(
+                listOf("System" to "", "Indonesian" to "id", "English" to "en", "Japanese" to "ja"),
+                selected = target,
+                onSelect = { target = it; Settings.Global.putString(resolver, ALIH_TARGET, it) },
+            )
+            Text("Replaces text in the game. On-screen text goes to Google Translate. Off for online competitive games.",
+                style = label(11.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
@@ -240,15 +287,17 @@ fun TouchEditor(pkg: String, pad: Boolean) {
         SwitchRow("Super touch", on, { on = it; touch.setSuperReport(pkg, it) }, tag = { LiveTag() })
         SettingRow("Scan rate", value = "${touch.reportRateHz.intValue} Hz")
     }
-    if (touch.supportsAccidentalTouchFilter) Block(padding = 10.dp) {
-        val levels = listOf("Off" to KernelTouchFilterClient.LEVEL_OFF, "Low" to KernelTouchFilterClient.LEVEL_LOW,
-            "Mid" to KernelTouchFilterClient.LEVEL_MEDIUM, "High" to KernelTouchFilterClient.LEVEL_HIGH)
+    if (touch.isAvailable) Block(padding = 10.dp) {
+        var stable by remember(pkg) { mutableStateOf(touch.stable(pkg)) }
+        SettingRow("Touch response")
+        Segmented(listOf("Fast" to false, "Stable" to true), stable, { stable = it; touch.setStable(pkg, it) })
+    }
+    if (touch.isAvailable) Block(padding = 10.dp) {
+        val levels = listOf("Off" to GameTouchModeManager.EDGE_OFF, "Low" to GameTouchModeManager.EDGE_LOW,
+            "Mid" to GameTouchModeManager.EDGE_MEDIUM, "High" to GameTouchModeManager.EDGE_HIGH)
         var edge by remember(pkg) { mutableIntStateOf(touch.edgeFilter(pkg)) }
-        var grip by remember(pkg) { mutableIntStateOf(touch.gripSuppression(pkg)) }
-        SettingRow("Edge filter")
+        SettingRow("Edge rejection")
         Segmented(levels, edge, { edge = it; touch.setEdgeFilter(pkg, it) })
-        SettingRow("Grip suppression")
-        Segmented(levels, grip, { grip = it; touch.setGripSuppression(pkg, it) })
     }
 }
 
@@ -290,34 +339,51 @@ private fun TouchPad() {
 
 // ── sound ─────────────────────────────────────────────────────────────────
 
+/** Hentak: the game's shots, hits and blasts felt on the motor, read from the game's own audio. */
+@Composable
+private fun HentakEditor(pkg: String) {
+    val store = rememberTuning().perApp()
+    var mode by remember(pkg) { mutableIntStateOf(store.hentakMode(pkg)) }
+    var sens by remember(pkg) { mutableFloatStateOf(store.hentakSensitivity(pkg)) }
+    Block(padding = 10.dp) {
+        SettingRow("4D haptics", tag = { LiveTag() })
+        Segmented(
+            listOf("Off" to PerAppSettingStore.HENTAK_OFF, "On" to PerAppSettingStore.HENTAK_ON,
+                "Strong" to PerAppSettingStore.HENTAK_STRONG),
+            selected = mode, onSelect = { mode = it; store.setHentakMode(pkg, it) },
+        )
+        if (mode == PerAppSettingStore.HENTAK_OFF) return@Block
+        SettingRow("Sensitivity", value = "%.1f×".format(sens))
+        Slider(sens, { sens = it }, range = 0.5f..1.5f, steps = 9, onCommit = { store.setHentakSensitivity(pkg, it) })
+        if (mode == PerAppSettingStore.HENTAK_STRONG) {
+            Text("Strong drives the motor past its limit: harder hits, more heat and some rattle, and the battery drains faster. " +
+                "Haptics ease off on their own when the motor gets hot.",
+                style = label(11.sp), color = MaterialTheme.colorScheme.tertiary)
+        } else {
+            Text("Follows the game's sound, so music with heavy beats can trigger it too.",
+                style = label(11.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
 @Composable
 fun SoundEditor(pkg: String?) {
-    val ctx = LocalContext.current
+    if (pkg != null) HentakEditor(pkg)
     val dolby = rememberTuning().dolby()
+    LaunchedEffect(Unit) { dolby.refresh() }
     val st = dolby.state
-    if (!st.available) return
-    Block(padding = 10.dp) {
-        SwitchRow("Dolby Atmos", st.enabled, dolby::setEnabled)
-        Segmented(
-            listOf("Dynamic" to DolbyBridge.PROFILE_DYNAMIC, "Movie" to DolbyBridge.PROFILE_MOVIE,
-                "Music" to DolbyBridge.PROFILE_MUSIC, "Game" to DolbyBridge.PROFILE_GAME),
-            selected = st.profile, onSelect = dolby::setProfile,
-        )
+    if (st.available) {
+        Block(padding = 10.dp) {
+            SwitchRow("Dolby Atmos", st.enabled, dolby::setEnabled)
+            Segmented(
+                listOf("Dynamic" to DolbyBridge.PROFILE_DYNAMIC, "Movie" to DolbyBridge.PROFILE_MOVIE,
+                    "Music" to DolbyBridge.PROFILE_MUSIC, "Custom" to DolbyBridge.PROFILE_CUSTOM),
+                selected = st.profile, onSelect = dolby::setProfile,
+            )
+            Text("For the device that is playing now. A game's own profile below goes over it.",
+                style = label(11.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
-    if (pkg == null) return
-    Block(padding = 10.dp) {
-        var mine by remember(pkg) { mutableIntStateOf(DolbyProfileClient.getProfile(ctx, pkg)) }
-        SettingRow("This game")
-        Segmented(
-            listOf("Global" to DolbyProfileClient.PROFILE_DEFAULT) +
-                (0..3).map { DolbyProfileClient.PROFILE_NAMES[it] to it },
-            selected = mine,
-            onSelect = {
-                mine = it
-                DolbyProfileClient.setProfile(ctx, pkg, it)
-                if (it >= 0) dolby.setProfile(it)
-            },
-        )
-    }
+    if (pkg != null) NadaEditor(pkg)
 }
 

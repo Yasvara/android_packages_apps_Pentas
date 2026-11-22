@@ -15,6 +15,10 @@ import dagger.hilt.components.SingletonComponent
 import org.yasvara.pentas.audio.DolbyController
 import org.yasvara.pentas.data.AngleDriver
 import org.yasvara.pentas.data.PerAppSettingStore
+import org.yasvara.pentas.kelir.Kelir
+import org.yasvara.pentas.upscale.Upscaler
+import org.yasvara.pentas.video.VideoPath
+import org.yasvara.pentas.luwes.Luwes
 import org.yasvara.pentas.thermal.PerfTuner
 import org.yasvara.pentas.touch.GameTouchModeManager
 
@@ -31,6 +35,10 @@ interface TuningDeps {
     fun touch(): GameTouchModeManager
     fun dolby(): DolbyController
     fun angle(): AngleDriver
+    fun luwes(): Luwes
+    fun kelir(): Kelir
+    fun upscaler(): Upscaler
+    fun videoPath(): VideoPath
 }
 
 @Composable

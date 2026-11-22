@@ -24,13 +24,12 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import org.yasvara.pentas.audio.DolbyBridge
-import org.yasvara.pentas.audio.DolbyProfileClient
 import org.yasvara.pentas.charging.ChargingProfileRepository
 import org.yasvara.pentas.data.PerAppSettingStore
 import org.yasvara.pentas.data.SettingsIO
 import org.yasvara.pentas.data.fpsstats.FpsStatsCollector
 import org.yasvara.pentas.data.fpsstats.FpsStatsRepository
+import org.yasvara.pentas.luwes.Luwes
 import org.yasvara.pentas.overlay.OverlayState
 import org.yasvara.pentas.overlay.Sidebar
 import org.yasvara.pentas.overlay.monitor.WidgetOverlay
@@ -52,6 +51,7 @@ class SessionService : Hilt_SessionService() {
     @Inject lateinit var session: ActiveSessionStore
     @Inject lateinit var state: OverlayState
     @Inject lateinit var sidebar: Sidebar
+    @Inject lateinit var luwes: Luwes
     @Inject lateinit var tiles: TileRegistry
     @Inject lateinit var widgets: WidgetOverlay
     @Inject lateinit var tweaks: SessionTweaks
@@ -107,7 +107,6 @@ class SessionService : Hilt_SessionService() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         sidebar.onConfigurationChanged()
-        touch.onConfigurationChanged(newConfig)
     }
 
     private fun start(pkg: String, mode: Int) {
@@ -122,6 +121,7 @@ class SessionService : Hilt_SessionService() {
 
     /** Video and game sessions only touch the hardware for games. */
     private fun startGame(pkg: String) {
+        runCatching { luwes.onSessionStart(pkg) }
         setBoost(true)
         io.setProp(PROP_SCHED_LIB, pkg)
         tweaks.apply()
@@ -130,10 +130,9 @@ class SessionService : Hilt_SessionService() {
         touch.onGameStart(pkg)
         charging.applyActiveProfile(pkg)
         wifiLock.acquire(pkg)
-        network.start(this, runCatching { packageManager.getApplicationInfo(pkg, 0).uid }.getOrDefault(0))
+        network.start()
         widgets.start()
         calls.start()
-        applyDolby(pkg)
     }
 
     private fun stopGame(pkg: String?) {
@@ -146,6 +145,9 @@ class SessionService : Hilt_SessionService() {
         touch.onGameStop()
         perf.applyGlobal()
         perApp.clearSession(pkg)
+        // Hide HUD is for one session's footage, never the next start, unless it was asked
+        // while the game ran unarmed and waits for that start.
+        pkg?.let { runCatching { luwes.onSessionEnd(it) } }
         tweaks.restore()
         io.setProp(PROP_SCHED_LIB, "none")
         setBoost(false)
@@ -169,15 +171,6 @@ class SessionService : Hilt_SessionService() {
         publish(null, SidebarMode.MODE_NONE)
     }
 
-    private fun applyDolby(pkg: String) {
-        if (!DolbyBridge.isAvailable(this)) return
-        val profile = DolbyProfileClient.getProfile(this, pkg)
-        if (profile >= 0) {
-            DolbyBridge.setEnabled(this, true)
-            DolbyBridge.setProfile(this, profile)
-        }
-    }
-
     private fun recordStats(on: Boolean) {
         val pkg = session.currentPackage
         if (on && pkg != null && !stats.isRecording.value) {
@@ -198,10 +191,12 @@ class SessionService : Hilt_SessionService() {
         }
     }
 
-    /** The overlay's main thread runs at display priority on the system cpuset during a game. */
+    /**
+     * The overlay's main thread runs at display priority during a game. Its cpuset is left to
+     * the bind: THREAD_GROUP_SYSTEM would join system-background, and nothing moves it back.
+     */
     private fun setBoost(on: Boolean) {
         Process.setThreadPriority(if (on) Process.THREAD_PRIORITY_DISPLAY else Process.THREAD_PRIORITY_DEFAULT)
-        Process.setThreadGroupAndCpuset(Process.myTid(), if (on) Process.THREAD_GROUP_SYSTEM else Process.THREAD_GROUP_DEFAULT)
     }
 
     /** Read by Laras's Pentas tile: the live app and the last game played. */

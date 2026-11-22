@@ -58,6 +58,7 @@ import org.yasvara.pentas.charging.ChargingProfileRepository
 import org.yasvara.pentas.data.AppClassifier
 import org.yasvara.pentas.data.PerAppSettingStore
 import org.yasvara.pentas.data.SystemSettings
+import org.yasvara.pentas.kelir.Kelir
 import org.yasvara.pentas.thermal.PerfTuner
 import org.yasvara.pentas.thermal.ThermalProfiles
 import org.yasvara.pentas.ui.kit.Kit
@@ -67,6 +68,7 @@ import org.yasvara.pentas.ui.kit.label
 import org.yasvara.pentas.ui.theme.PentasTheme
 import org.yasvara.pentas.ui.tuning.GameClocks
 import org.yasvara.pentas.ui.tuning.GraphicsEditor
+import org.yasvara.pentas.ui.tuning.KelirEditor
 import org.yasvara.pentas.ui.tuning.SoundEditor
 import org.yasvara.pentas.ui.tuning.TouchEditor
 
@@ -93,10 +95,11 @@ interface GameDeps {
     fun perf(): PerfTuner
     fun system(): SystemSettings
     fun charging(): ChargingProfileRepository
+    fun kelir(): Kelir
 }
 
 private enum class Part(val title: String) {
-    GRAPHICS("Graphics"), PERFORMANCE("Performance"), THERMAL("Thermal profile"), TOUCH("Touch"),
+    GRAPHICS("Graphics"), KELIR("Kelir"), PERFORMANCE("Performance"), THERMAL("Thermal profile"), TOUCH("Touch"),
     SOUND("Sound"), CHARGING("Charging"), IDENTITY("Device identity"),
 }
 
@@ -111,6 +114,7 @@ private fun GameScreen(pkg: String, finish: () -> Unit) {
         else Screen(p.title, onBack = { part = null }) {
             when (p) {
                 Part.GRAPHICS -> GraphicsEditor(pkg)
+                Part.KELIR -> KelirEditor(pkg, comfortable = true)
                 Part.PERFORMANCE -> GameClocks(pkg)
                 Part.THERMAL -> ThermalList(pkg, deps.perApp())
                 Part.TOUCH -> TouchEditor(pkg, pad = false)
@@ -161,6 +165,9 @@ private fun Overview(pkg: String, deps: GameDeps, onOpen: (Part) -> Unit, finish
         val customJson = Settings.System.getStringForUser(ctx.contentResolver, ThermalProfiles.KEY_CUSTOM_PROFILES, UserHandle.USER_CURRENT)
         val rows = listOf(
             Triple(Part.GRAPHICS, Sym.AspectRatio, if (scale == "1.0") "Native" else "${scale}×"),
+            Triple(Part.KELIR, Sym.Palette, deps.kelir().slots(pkg).let { s ->
+                s.running?.let { "Slot ${s.active + 1} · ${it.nodes.size} filters" } ?: "Off"
+            }),
             Triple(Part.PERFORMANCE, Sym.Speed, if (deps.perf().clockScope(pkg) == PerfTuner.ClockScope.GLOBAL) "Global clocks" else "Own clocks"),
             Triple(Part.THERMAL, Sym.Thermostat, ThermalProfiles.nameOf(perApp.thermalProfile(pkg), customJson)),
             Triple(Part.TOUCH, Sym.TouchApp, null),

@@ -25,8 +25,10 @@ import org.yasvara.pentas.ui.kit.PageHeader
 import org.yasvara.pentas.ui.kit.Segmented
 import org.yasvara.pentas.ui.tuning.GameClocks
 import org.yasvara.pentas.ui.tuning.GraphicsEditor
+import org.yasvara.pentas.ui.tuning.KelirEditor
 import org.yasvara.pentas.ui.tuning.SoundEditor
 import org.yasvara.pentas.ui.tuning.TouchEditor
+import org.yasvara.pentas.ui.tuning.VideoEditor
 
 /** The tuner inside the sidebar: tabs on top, the shared per-game editors below. */
 @Composable
@@ -34,13 +36,20 @@ fun Tuner(mode: Int) {
     val o = LocalOverlay.current
     val pkg = o.pkg ?: return
     val game = mode == SidebarMode.MODE_GAME
-    val tabs = if (game) TunerTab.entries else listOf(TunerTab.GRAPHICS, TunerTab.SOUND)
+    val tabs = if (game) TunerTab.entries else listOf(TunerTab.KELIR, TunerTab.GRAPHICS, TunerTab.SOUND)
     var tab by o.state.tunerTab
     if (tab !in tabs) tab = tabs.first()
     Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.spacedBy(Kit.Gap)) {
         PageHeader("Tuner", onBack = { o.state.home() }, back = R.drawable.sym_arrow_back)
         Segmented(
-            tabs.map { (if (it == TunerTab.GRAPHICS && !game) "Display" else it.label) to it },
+            tabs.map {
+                when {
+                    game -> it.label
+                    it == TunerTab.GRAPHICS -> "Display"
+                    it == TunerTab.KELIR -> "Video"
+                    else -> it.label
+                } to it
+            },
             selected = tab, onSelect = { tab = it },
         )
         Column(
@@ -50,6 +59,10 @@ fun Tuner(mode: Int) {
             when (tab) {
                 TunerTab.PERF -> GameClocks(pkg)
                 TunerTab.GRAPHICS -> GraphicsEditor(pkg, game)
+                TunerTab.KELIR -> {
+                    if (!game) VideoEditor(pkg)
+                    KelirEditor(pkg, onCompare = { o.state.comparing.value = true })
+                }
                 TunerTab.TOUCH -> TouchEditor(pkg, pad = true)
                 TunerTab.SOUND -> SoundEditor(pkg)
             }
@@ -60,6 +73,7 @@ fun Tuner(mode: Int) {
 private val TunerTab.label get() = when (this) {
     TunerTab.PERF -> "Perf"
     TunerTab.GRAPHICS -> "Graphics"
+    TunerTab.KELIR -> "Kelir"
     TunerTab.TOUCH -> "Touch"
     TunerTab.SOUND -> "Sound"
 }

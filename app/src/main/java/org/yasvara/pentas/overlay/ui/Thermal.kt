@@ -9,6 +9,7 @@ import android.provider.Settings
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -16,7 +17,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -31,10 +31,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -69,18 +68,18 @@ private class ThermalModel(val options: List<ThermalProfiles.ProfileOption>, val
 private fun rememberThermal(): Pair<ThermalModel, (List<Int>) -> Unit> {
     val o = LocalOverlay.current
     val ctx = LocalContext.current
-    var pins by remember {
-        mutableStateOf(
-            o.settings.getString(KEY_PINS, "").split(',').mapNotNull { it.toIntOrNull() }.ifEmpty { DEFAULT_PINS }
-        )
-    }
+    val rawPins by o.settings.observable.stringState(KEY_PINS, "")
     val options = remember {
         val custom = Settings.System.getStringForUser(ctx.contentResolver, ThermalProfiles.KEY_CUSTOM_PROFILES, UserHandle.USER_CURRENT)
         ThermalProfiles.options(custom, builtinIndices = GAME_SCENES)
     }
-    return ThermalModel(options, pins.filter { p -> options.any { it.index == p } }) to { new ->
-        pins = new
-        o.settings.putString(KEY_PINS, new.joinToString(","))
+    val validIndices = remember(options) { options.mapTo(HashSet()) { it.index } }
+    val pins = remember(rawPins, validIndices) {
+        val parsed = rawPins.split(',').mapNotNull { it.toIntOrNull() }.ifEmpty { DEFAULT_PINS }
+        parsed.filter { it in validIndices }
+    }
+    return ThermalModel(options, pins) to { new ->
+        o.settings.observable.setString(KEY_PINS, "", new.joinToString(","))
     }
 }
 
@@ -99,7 +98,7 @@ fun ThermalSwitcher() {
     val pkg = o.pkg ?: return
     val (model, _) = rememberThermal()
     var current by o.state.profile
-    androidx.compose.runtime.LaunchedEffect(pkg) { current = o.perApp.thermalProfile(pkg) }
+    LaunchedEffect(pkg) { current = o.perApp.thermalProfile(pkg) }
     fun pick(i: Int) {
         current = i
         o.perApp.setThermalProfile(pkg, i)
@@ -135,15 +134,31 @@ fun ThermalSwitcher() {
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Glyph(R.drawable.sym_thermostat, cs.onSecondaryContainer, 15.dp)
-            Text(model.name(current), Modifier.weight(1f, fill = false), style = label(12.5.sp, 600),
-                color = cs.onSecondaryContainer, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Glyph(R.drawable.sym_expand_more, cs.onSecondaryContainer, 14.dp)
-            Spacer(Modifier.weight(1f))
-            Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
-                pins.indices.forEach { i ->
-                    val w by animateDpAsState(if (i == pos) 10.dp else 3.dp, Kit.fast(), label = "pin")
-                    Box(Modifier.size(w, 3.dp).clip(CircleShape)
-                        .background(if (i == pos) cs.onSecondaryContainer else cs.onSecondaryContainer.copy(alpha = 0.35f)))
+            // Single weighted container lets the profile name use all free width instead of splitting 50/50 with a Spacer.
+            Row(
+                Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(
+                    model.name(current),
+                    Modifier.weight(1f, fill = false).basicMarquee(iterations = Int.MAX_VALUE),
+                    style = label(12.5.sp, 600),
+                    color = cs.onSecondaryContainer,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Glyph(R.drawable.sym_expand_more, cs.onSecondaryContainer, 14.dp)
+            }
+            if (pins.size > 1) {
+                Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
+                    pins.indices.forEach { i ->
+                        val w by animateDpAsState(if (i == pos) 10.dp else 3.dp, Kit.fast(), label = "pin")
+                        Box(
+                            Modifier.size(w, 3.dp).clip(CircleShape)
+                                .background(if (i == pos) cs.onSecondaryContainer else cs.onSecondaryContainer.copy(alpha = 0.35f))
+                        )
+                    }
                 }
             }
         }
@@ -162,7 +177,7 @@ fun ProfileList() {
     val cs = MaterialTheme.colorScheme
     val pkg = o.pkg ?: return
     val (model, setPins) = rememberThermal()
-    var pins by remember { mutableStateOf(model.pins) }
+    val pins = model.pins
     var current by o.state.profile
     val close = { o.state.profileList.value = false }
     Box(
@@ -192,17 +207,26 @@ fun ProfileList() {
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     if (on) Glyph(R.drawable.sym_check, cs.onSecondaryContainer, 14.dp)
-                    Text(opt.name, Modifier.weight(1f), style = label(12.5.sp, if (on) 600 else 500),
-                        color = if (on) cs.onSecondaryContainer else cs.onSurface, maxLines = 1)
+                    Text(
+                        opt.name,
+                        Modifier.weight(1f),
+                        style = label(12.5.sp, if (on) 600 else 500),
+                        color = if (on) cs.onSecondaryContainer else cs.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                     Box(
                         Modifier.size(28.dp).clip(CircleShape).clickable {
-                            pins = if (pinned) pins - opt.index else pins + opt.index
-                            setPins(pins)
+                            setPins(if (pinned) pins - opt.index else pins + opt.index)
                         },
                         contentAlignment = Alignment.Center,
                     ) {
-                        Glyph(R.drawable.sym_keep, if (pinned) cs.primary else cs.outline, 15.dp,
-                            if (pinned) "Unpin ${opt.name}" else "Pin ${opt.name}")
+                        Glyph(
+                            R.drawable.sym_keep,
+                            if (pinned) cs.primary else cs.outline,
+                            15.dp,
+                            if (pinned) "Unpin ${opt.name}" else "Pin ${opt.name}",
+                        )
                     }
                 }
             }

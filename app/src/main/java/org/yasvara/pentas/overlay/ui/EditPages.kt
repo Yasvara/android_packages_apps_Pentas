@@ -6,6 +6,7 @@ package org.yasvara.pentas.overlay.ui
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,11 +14,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -28,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -48,17 +53,22 @@ import org.yasvara.pentas.overlay.dock.openInWindow
 import org.yasvara.pentas.overlay.tiles.TileAction
 import org.yasvara.pentas.overlay.tiles.TileRegistry
 import org.yasvara.pentas.overlay.tiles.tilePainter
-import org.yasvara.pentas.ui.kit.Block
 import org.yasvara.pentas.ui.kit.Glyph
+import org.yasvara.pentas.ui.kit.Kit
+import org.yasvara.pentas.ui.kit.PageHeader
 import org.yasvara.pentas.ui.kit.RoundButton
 import org.yasvara.pentas.ui.kit.Section
+import org.yasvara.pentas.ui.kit.floatingReorderItem
 import org.yasvara.pentas.ui.kit.label
+import org.yasvara.pentas.ui.kit.moved
+import org.yasvara.pentas.ui.kit.rememberLinearReorderState
 
-/** Pick toggles (top row, five slots) and tools (pages of four) from the pool. */
+/** Pick and drag-reorder toggles (top row, five slots) and tools (pages of four) from the pool. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun EditPage() {
     val o = LocalOverlay.current
+    val cs = MaterialTheme.colorScheme
     val reg = o.tiles
     var toggles by remember { mutableStateOf(reg.toggles.map { it.id }) }
     var tools by remember { mutableStateOf(reg.tools.map { it.id }) }
@@ -69,21 +79,82 @@ fun EditPage() {
             reg.reset(); toggles = reg.toggles.map { it.id }; tools = reg.tools.map { it.id }
         })
     }) {
+        Text(
+            "Tap to add/remove · Hold & drag to reorder",
+            style = label(10.5.sp),
+            color = cs.onSurfaceVariant,
+            modifier = Modifier.padding(start = 4.dp),
+        )
         Section("Toggles · ${toggles.size}/${TileRegistry.TOGGLE_SLOTS}")
-        Chips(toggles.mapNotNull { id -> pool.firstOrNull { it.id == id } }, selected = true) { t ->
-            toggles = toggles - t.id; commit()
-        }
+        ReorderableChips(
+            tiles = toggles.mapNotNull(reg::find),
+            onTap = { t -> toggles = toggles - t.id; commit() },
+            onSwap = { from, to -> toggles = toggles.moved(from, to) },
+            onCommit = { commit() },
+        )
         Section("Tools")
-        Chips(tools.mapNotNull { id -> pool.firstOrNull { it.id == id } }, selected = true) { t ->
-            tools = tools - t.id; commit()
+        ReorderableChips(
+            tiles = tools.mapNotNull(reg::find),
+            onTap = { t -> tools = tools - t.id; commit() },
+            onSwap = { from, to -> tools = tools.moved(from, to) },
+            onCommit = { commit() },
+        )
+        val free = remember(pool, toggles, tools) {
+            pool.filter { it.id !in toggles && it.id !in tools }
         }
-        val free = pool.filter { it.id !in toggles && it.id !in tools }
         if (free.isNotEmpty()) {
             Section("Available")
             free.groupBy { it.group }.forEach { (_, group) ->
                 Chips(group, selected = false) { t ->
-                    if (toggles.size < TileRegistry.TOGGLE_SLOTS && t.id != "widgets") toggles = toggles + t.id else tools = tools + t.id
+                    if (toggles.size < TileRegistry.TOGGLE_SLOTS && t.id != "widgets") {
+                        toggles = toggles + t.id
+                    } else {
+                        tools = tools + t.id
+                    }
                     commit()
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ReorderableChips(
+    tiles: List<TileAction>,
+    onTap: (TileAction) -> Unit,
+    onSwap: (Int, Int) -> Unit,
+    onCommit: () -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    val ids = remember(tiles) { tiles.map { it.id } }
+    val reorder = rememberLinearReorderState(horizontal = true, gap = 4.dp)
+    val shape = RoundedCornerShape(16.dp)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        tiles.forEach { t ->
+            key(t.id) {
+                val floating = reorder.draggingId == t.id && reorder.lifted
+                Row(
+                    Modifier
+                        .height(32.dp)
+                        .floatingReorderItem(
+                            state = reorder,
+                            id = t.id,
+                            ids = ids,
+                            shape = shape,
+                            onSwap = onSwap,
+                            onCommit = onCommit,
+                        )
+                        .clip(shape)
+                        .background(cs.secondaryContainer)
+                        .then(if (floating) Modifier.border(1.5.dp, cs.primary, shape) else Modifier)
+                        .clickable { onTap(t) }
+                        .padding(horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(tilePainter(t), null, Modifier.size(16.dp), tint = cs.onSecondaryContainer)
+                    Text(t.label, style = label(11.5.sp, 550), maxLines = 1, color = cs.onSecondaryContainer)
                 }
             }
         }
@@ -103,8 +174,10 @@ private fun Chips(tiles: List<TileAction>, selected: Boolean, onTap: (TileAction
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Icon(tilePainter(t), null, Modifier.size(16.dp), tint = if (selected) cs.onSecondaryContainer else cs.onSurfaceVariant)
-                Text(t.label, style = label(11.5.sp, 550), maxLines = 1,
-                    color = if (selected) cs.onSecondaryContainer else cs.onSurface)
+                Text(
+                    t.label, style = label(11.5.sp, 550), maxLines = 1,
+                    color = if (selected) cs.onSecondaryContainer else cs.onSurface,
+                )
             }
         }
     }
@@ -123,7 +196,12 @@ fun AppsPage() {
     val shown = remember(all, query) {
         if (query.isBlank()) all else all.filter { it.label.contains(query, true) || it.packageName.contains(query, true) }
     }
-    SubPage(if (pin) "Add shortcut" else "Open in a window") {
+    Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.spacedBy(Kit.Gap)) {
+        PageHeader(
+            if (pin) "Add shortcut" else "Open in a window",
+            onBack = { o.state.home() },
+            back = R.drawable.sym_arrow_back,
+        )
         Row(
             Modifier.fillMaxWidth().height(36.dp).clip(CircleShape).background(cs.surfaceContainerHigh).padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -137,8 +215,12 @@ fun AppsPage() {
                 )
             }
         }
-        Block(padding = 4.dp, color = cs.surfaceContainerLow) {
-            shown.forEach { app ->
+        LazyColumn(
+            Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(Kit.Card))
+                .background(cs.surfaceContainerLow).padding(4.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            items(shown, key = { it.packageName }) { app ->
                 val bmp = remember(app.packageName) { app.icon?.toBitmap(72, 72)?.asImageBitmap() }
                 Row(
                     Modifier.fillMaxWidth().height(40.dp).clip(RoundedCornerShape(12.dp)).clickable {
@@ -148,9 +230,14 @@ fun AppsPage() {
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     bmp?.let { Image(it, null, Modifier.size(28.dp)) } ?: Box(Modifier.width(28.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(app.label, style = label(12.5.sp, 550), color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
+                    Text(
+                        app.label,
+                        Modifier.weight(1f),
+                        style = label(12.5.sp, 550),
+                        color = cs.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
         }

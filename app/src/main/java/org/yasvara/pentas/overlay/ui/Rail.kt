@@ -7,6 +7,7 @@ package org.yasvara.pentas.overlay.ui
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -28,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
@@ -47,8 +50,12 @@ import org.yasvara.pentas.overlay.Page
 import org.yasvara.pentas.overlay.dock.openInWindow
 import org.yasvara.pentas.ui.kit.Glyph
 import org.yasvara.pentas.ui.kit.RoundButton
+import org.yasvara.pentas.ui.kit.floatingReorderItem
 import org.yasvara.pentas.ui.kit.label
+import org.yasvara.pentas.ui.kit.moved
 import org.yasvara.pentas.ui.kit.num
+import org.yasvara.pentas.ui.kit.rememberLinearReorderState
+import kotlin.math.abs
 
 /** mm:ss, or h:mm:ss past an hour. */
 internal fun clock(ms: Long): String {
@@ -116,33 +123,81 @@ private fun Ping() {
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom) {
             listOf(4, 7, 11).forEachIndexed { i, h ->
-                Box(Modifier.size(4.dp, h.dp).clip(RoundedCornerShape(1.5.dp))
-                    .background(if (i < bars) (if (bars == 1) cs.error else cs.primary) else cs.outlineVariant))
+                Box(
+                    Modifier.size(4.dp, h.dp).clip(RoundedCornerShape(1.5.dp))
+                        .background(if (i < bars) (if (bars == 1) cs.error else cs.primary) else cs.outlineVariant)
+                )
             }
         }
         Text(if (ms > 0) "$ms ms" else "—", style = label(10.sp), color = cs.onSurfaceVariant)
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ShortcutColumn(modifier: Modifier, close: () -> Unit) {
     val o = LocalOverlay.current
+    val cs = MaterialTheme.colorScheme
     val mode = o.session.mode
     var apps by remember { mutableStateOf(emptyList<AppRef>()) }
     var rev by remember { mutableLongStateOf(0) }
-    LaunchedEffect(rev) { apps = o.shortcuts.load(mode, o.pkg, SHORTCUTS) }
-    Column(modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    LaunchedEffect(rev, mode, o.pkg) { apps = o.shortcuts.load(mode, o.pkg, SHORTCUTS) }
+
+    val reorder = rememberLinearReorderState(horizontal = false, gap = 6.dp)
+    val ids = remember(apps) { apps.map { it.packageName } }
+    val scroll = rememberScrollState()
+    val unpinThresholdPx = with(LocalDensity.current) { UNPIN_DRAG_DP.toPx() }
+
+    Column(
+        modifier.verticalScroll(scroll, enabled = !reorder.isDragging),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         apps.forEach { app ->
-            val bmp = remember(app.packageName) { app.icon?.toBitmap(96, 96)?.asImageBitmap() }
-            Box(
-                Modifier.size(40.dp).clip(CircleShape).combinedClickable(
-                    onLongClick = { o.shortcuts.unpin(mode, app.packageName); rev++ },
-                    onClick = { openInWindow(app.packageName); close() },
-                ),
-            ) { bmp?.let { Image(it, app.label, Modifier.size(40.dp)) } }
+            key(app.packageName) {
+                val bmp = remember(app.packageName) { app.icon?.toBitmap(96, 96)?.asImageBitmap() }
+                val floating = reorder.draggingId == app.packageName && reorder.lifted
+                val pullingOut = floating && abs(reorder.dragX) >= unpinThresholdPx
+                Box(
+                    Modifier
+                        .size(40.dp)
+                        .floatingReorderItem(
+                            state = reorder,
+                            id = app.packageName,
+                            ids = ids,
+                            shape = CircleShape,
+                            onSwap = { from, to -> apps = apps.moved(from, to) },
+                            onCommit = { o.shortcuts.setOrder(mode, apps.map { it.packageName }) },
+                            crossAxisThreshold = UNPIN_DRAG_DP,
+                            onCrossAxisDrop = {
+                                o.shortcuts.unpin(mode, app.packageName)
+                                rev++
+                            },
+                            floatScale = 1.14f,
+                            floatElevation = 12.dp,
+                        )
+                        .clip(CircleShape)
+                        .then(
+                            when {
+                                pullingOut -> Modifier.border(2.dp, cs.error, CircleShape)
+                                floating -> Modifier.border(2.dp, cs.primary, CircleShape)
+                                else -> Modifier
+                            }
+                        )
+                        .clickable { openInWindow(app.packageName); close() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    bmp?.let { Image(it, app.label, Modifier.size(40.dp)) }
+                    if (pullingOut) {
+                        Box(
+                            Modifier.size(40.dp).background(cs.error.copy(alpha = 0.55f)),
+                            contentAlignment = Alignment.Center,
+                        ) { Glyph(R.drawable.sym_close, cs.onError, 18.dp, "Unpin") }
+                    }
+                }
+            }
         }
     }
 }
 
 private const val SHORTCUTS = 20
+private val UNPIN_DRAG_DP = 38.dp

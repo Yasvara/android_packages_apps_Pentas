@@ -4,6 +4,9 @@
  */
 package org.yasvara.pentas.overlay
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Rect
 import android.os.Handler
@@ -15,14 +18,19 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.view.animation.PathInterpolator
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -30,18 +38,24 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -49,14 +63,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import org.yasvara.rekam.controls.HideFromCapture
 import org.yasvara.pentas.overlay.capture.GameScreenshotUtil
 import org.yasvara.pentas.overlay.ui.Panel
 import org.yasvara.pentas.overlay.ui.Rail
 import org.yasvara.pentas.session.SidebarMode
+import org.yasvara.pentas.ui.kit.Kit
 import org.yasvara.pentas.ui.tuning.KelirCompare
+import org.yasvara.rekam.controls.HideFromCapture
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -83,9 +99,12 @@ class Sidebar @Inject constructor(
     private var handle: ComposeView? = null
     private var panel: ComposeView? = null
     private var scope: CoroutineScope? = null
+    private var snapAnimator: ValueAnimator? = null
 
     private val onLeft = mutableStateOf(false)
     private val idle = mutableStateOf(false)
+    private val handlePressed = mutableStateOf(false)
+    private val handleFloating = mutableStateOf(false)
     private val closing = mutableStateOf(false)
     private var mode = SidebarMode.MODE_NONE
     private var pkg: String? = null
@@ -95,11 +114,13 @@ class Sidebar @Inject constructor(
 
     fun start(packageName: String, sessionMode: Int) {
         removePanel()
+        snapAnimator?.cancel(); snapAnimator = null
+        scope?.cancel(); scope = null
         pkg = packageName
         mode = sessionMode
         state.reset()
         onLeft.value = settings.x < 0
-        handleParams.y = settings.y.coerceIn(0, screenHeight())
+        handleParams.y = settings.y.coerceIn(0, maxHandleY())
         dock()
         if (handle == null) handle = overlayView(context) { Handle() }.also {
             it.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
@@ -122,6 +143,7 @@ class Sidebar @Inject constructor(
     }
 
     fun end() {
+        snapAnimator?.cancel(); snapAnimator = null
         removePanel()
         handle?.let { runCatching { wm.removeViewImmediate(it) } }
         handle = null
@@ -133,17 +155,73 @@ class Sidebar @Inject constructor(
     }
 
     fun onConfigurationChanged() {
+        snapAnimator?.cancel(); snapAnimator = null
         removePanel()
-        handleParams.y = handleParams.y.coerceIn(0, screenHeight())
+        handleFloating.value = false
+        handlePressed.value = false
+        handleParams.y = handleParams.y.coerceIn(0, maxHandleY())
+        dock()
         handle?.let { runCatching { wm.updateViewLayout(it, handleParams) } }
         overlay.widgets.onConfigurationChanged()
     }
 
-    private fun screenHeight() = wm.maximumWindowMetrics.bounds.height() - 96
+    private fun screenWidth() = wm.maximumWindowMetrics.bounds.width()
+    private fun screenHeight() = wm.maximumWindowMetrics.bounds.height()
+    private fun handleWidthPx() = handle?.width?.takeIf { it > 0 } ?: (32 * context.resources.displayMetrics.density).roundToInt()
+    private fun handleHeightPx() = handle?.height?.takeIf { it > 0 } ?: (84 * context.resources.displayMetrics.density).roundToInt()
+    private fun maxHandleX() = (screenWidth() - handleWidthPx()).coerceAtLeast(0)
+    private fun maxHandleY() = (screenHeight() - handleHeightPx()).coerceAtLeast(0)
 
     private fun dock() {
         handleParams.gravity = Gravity.TOP or if (onLeft.value) Gravity.START else Gravity.END
         handleParams.x = 0
+    }
+
+    /** Detaches from edge gravity into absolute TOP|START coordinates so the handle floats freely. */
+    private fun beginFloating() {
+        snapAnimator?.cancel(); snapAnimator = null
+        if (handleParams.gravity != (Gravity.TOP or Gravity.START)) {
+            handleParams.x = if (onLeft.value) 0 else maxHandleX()
+            handleParams.gravity = Gravity.TOP or Gravity.START
+        }
+        handleFloating.value = true
+    }
+
+    /** Smoothly springs the floating handle to whichever screen edge is closer, then docks. */
+    private fun snapToNearestEdge(onDocked: () -> Unit) {
+        val maxX = maxHandleX()
+        val startX = handleParams.x.coerceIn(0, maxX)
+        val snapLeft = startX + handleWidthPx() / 2 < screenWidth() / 2
+        val targetX = if (snapLeft) 0 else maxX
+        onLeft.value = snapLeft
+        settings.x = if (snapLeft) -1 else 1
+        settings.y = handleParams.y.coerceIn(0, maxHandleY())
+
+        snapAnimator?.cancel()
+        if (startX == targetX) {
+            handleFloating.value = false
+            dock()
+            handle?.let { runCatching { wm.updateViewLayout(it, handleParams) } }
+            onDocked()
+            return
+        }
+        snapAnimator = ValueAnimator.ofInt(startX, targetX).apply {
+            duration = SNAP_MS
+            interpolator = PathInterpolator(0.22f, 1f, 0.36f, 1f)
+            addUpdateListener { anim ->
+                handleParams.x = anim.animatedValue as Int
+                handle?.let { if (it.isAttachedToWindow) runCatching { wm.updateViewLayout(it, handleParams) } }
+            }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    handleFloating.value = false
+                    dock()
+                    handle?.let { if (it.isAttachedToWindow) runCatching { wm.updateViewLayout(it, handleParams) } }
+                    onDocked()
+                }
+            })
+            start()
+        }
     }
 
     private fun keepScreenOn(on: Boolean) {
@@ -174,35 +252,149 @@ class Sidebar @Inject constructor(
 
     // ── handle ──────────────────────────────────────────────────────────
 
-    @androidx.compose.runtime.Composable
+    @Composable
     private fun Handle() {
         val cs = MaterialTheme.colorScheme
+        val haptic = LocalHapticFeedback.current
+        val density = LocalDensity.current
         val left by onLeft
-        val dim by animateFloatAsState(if (idle.value) 0.35f else 1f, label = "idle")
+        val isIdle by idle
+        val pressed by handlePressed
+        val floating by handleFloating
+
+        val alpha by animateFloatAsState(
+            when {
+                floating || pressed -> 1f
+                isIdle -> 0.42f
+                else -> 0.88f
+            },
+            label = "handleAlpha",
+        )
+        val pillWidth by animateDpAsState(
+            when {
+                floating -> 18.dp
+                pressed -> 7.dp
+                else -> 5.dp
+            },
+            Kit.fast(),
+            label = "handleW",
+        )
+        val pillHeight by animateDpAsState(
+            when {
+                floating -> 56.dp
+                pressed -> 54.dp
+                else -> 48.dp
+            },
+            Kit.fast(),
+            label = "handleH",
+        )
+        val pillScale by animateFloatAsState(if (floating) 1.06f else 1f, Kit.fast(), label = "handleScale")
+
+        val tapSlopPx = with(density) { 10.dp.toPx() }
+        val openSwipePx = with(density) { 22.dp.toPx() }
+        val floatTriggerPx = with(density) { 14.dp.toPx() }
+
         Box(
-            Modifier.size(20.dp, 72.dp)
-                .pointerInput(Unit) { detectTapGestures { showPanel() } }
+            Modifier
+                .size(32.dp, 84.dp)
                 .pointerInput(Unit) {
-                    detectDragGestures(
-                        onDragStart = { scheduleIdle() },
-                        onDragEnd = {
-                            settings.y = handleParams.y
-                            scheduleIdle()
-                        },
-                    ) { c, d ->
-                        c.consume()
-                        handleParams.y = (handleParams.y + d.y.roundToInt()).coerceIn(0, screenHeight())
-                        val toLeft = if (left) d.x > 40 else d.x < -40
-                        if (toLeft) { onLeft.value = !left; settings.x = if (onLeft.value) -1 else 1; dock() }
-                        handle?.let { runCatching { wm.updateViewLayout(it, handleParams) } }
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val downTime = down.uptimeMillis
+                        val startLeft = onLeft.value
+                        var totalX = 0f
+                        var totalY = 0f
+                        var isFloating = false
+                        var opened = false
+                        handlePressed.value = true
+                        scheduleIdle()
+
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!change.pressed) {
+                                handlePressed.value = false
+                                when {
+                                    isFloating -> snapToNearestEdge {
+                                        haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                        scheduleIdle()
+                                    }
+                                    !opened && abs(totalX) < tapSlopPx && abs(totalY) < tapSlopPx -> {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        showPanel()
+                                    }
+                                    else -> scheduleIdle()
+                                }
+                                break
+                            }
+                            val delta = change.positionChange()
+                            if (delta.x != 0f || delta.y != 0f) {
+                                change.consume()
+                                totalX += delta.x
+                                totalY += delta.y
+                                val inward = if (startLeft) totalX else -totalX
+                                val heldMs = change.uptimeMillis - downTime
+
+                                if (!isFloating && !opened) {
+                                    // Quick deliberate inward swipe opens the panel effortlessly.
+                                    if (inward >= openSwipePx && abs(totalY) < openSwipePx && heldMs < 240L) {
+                                        opened = true
+                                        handlePressed.value = false
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        showPanel()
+                                        continue
+                                    }
+                                    // Vertical drag or hold-and-move detaches into smooth floating reposition mode.
+                                    if (abs(totalY) >= floatTriggerPx || (heldMs >= 220L && abs(totalX) + abs(totalY) >= tapSlopPx)) {
+                                        isFloating = true
+                                        beginFloating()
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    }
+                                }
+
+                                if (isFloating) {
+                                    handleParams.x = (handleParams.x + delta.x.roundToInt()).coerceIn(0, maxHandleX())
+                                    handleParams.y = (handleParams.y + delta.y.roundToInt()).coerceIn(0, maxHandleY())
+                                    handle?.let { runCatching { wm.updateViewLayout(it, handleParams) } }
+                                }
+                            }
+                        }
                     }
                 },
-            contentAlignment = if (left) Alignment.CenterStart else Alignment.CenterEnd,
+            contentAlignment = when {
+                floating -> Alignment.Center
+                left -> Alignment.CenterStart
+                else -> Alignment.CenterEnd
+            },
         ) {
             Box(
-                Modifier.padding(horizontal = 4.dp).size(5.dp, 48.dp).graphicsLayer { alpha = dim }
-                    .clip(CircleShape).background(cs.primary)
-            )
+                Modifier
+                    .padding(horizontal = if (floating) 0.dp else 5.dp)
+                    .size(pillWidth, pillHeight)
+                    .graphicsLayer {
+                        this.alpha = alpha
+                        scaleX = pillScale
+                        scaleY = pillScale
+                        shadowElevation = if (floating) 10.dp.toPx() else 2.dp.toPx()
+                        shape = CircleShape
+                    }
+                    .clip(CircleShape)
+                    .background(if (floating) cs.primaryContainer else cs.primary)
+                    .border(
+                        width = if (floating) 1.5.dp else 0.75.dp,
+                        color = if (floating) cs.primary else cs.onPrimary.copy(alpha = 0.25f),
+                        shape = CircleShape,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (floating) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        repeat(3) {
+                            Box(Modifier.size(4.dp).clip(CircleShape).background(cs.onPrimaryContainer))
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -298,7 +490,7 @@ class Sidebar @Inject constructor(
         runCatching { wm.updateViewLayout(v, panelParams) }
     }
 
-    @androidx.compose.runtime.Composable
+    @Composable
     private fun PanelWindow() {
         // Opening the sidebar during a full-screen recording must not show up in the file.
         HideFromCapture()
@@ -307,11 +499,14 @@ class Sidebar @Inject constructor(
         val keyboard by state.keyboard
         val comparing by state.comparing
         val editing by overlay.widgets.editing
+        val page by state.page
+        val metric by state.metric
+        val np by overlay.media.now
         val compactForEdit = editing && !comparing
         LaunchedEffect(keyboard, compactForEdit, left) {
             updatePanelLayout(keyboard, compactForEdit, left)
         }
-        val slide = androidx.compose.runtime.remember { Animatable(1f) }
+        val slide = remember { Animatable(1f) }
         LaunchedEffect(shut) {
             if (shut) {
                 slide.animateTo(1f, spring(dampingRatio = 1f, stiffness = 1600f))
@@ -323,7 +518,11 @@ class Sidebar @Inject constructor(
             KelirCompare(game, onBack = { state.comparing.value = false }, onDone = { close() })
             return
         }
-        val height = (LocalConfiguration.current.screenHeightDp - 16).coerceAtMost(388).dp
+        val maxScreenH = (LocalConfiguration.current.screenHeightDp - 16).coerceAtLeast(260)
+        // Compact Home height when there is no active song card so there is no dead void.
+        val compactHome = page == Page.HOME && metric == null && mode == SidebarMode.MODE_GAME && np == null
+        val targetHeight = maxScreenH.coerceAtMost(if (compactHome) COMPACT_HOME_DP else FULL_PANEL_DP).dp
+        val height by animateDpAsState(targetHeight, Kit.default(), label = "panelH")
         val rowModifier = Modifier
             .padding(horizontal = 8.dp)
             .height(height)
@@ -353,5 +552,8 @@ class Sidebar @Inject constructor(
         const val KEY_GESTURE_LOCK = "pentas_gesture_lock"
         private const val IDLE_MS = 3000L
         private const val CLOSE_TIMEOUT_MS = 500L
+        private const val SNAP_MS = 240L
+        private const val FULL_PANEL_DP = 388
+        private const val COMPACT_HOME_DP = 330
     }
 }

@@ -116,12 +116,10 @@ object Kit {
     }
 }
 
-@Composable
 fun label(size: TextUnit = 12.sp, weight: Int = 500) = TextStyle(
     fontFamily = Kit.Sans, fontSize = size, fontWeight = FontWeight(weight),
 )
 
-@Composable
 fun num(size: TextUnit, weight: Int = 600) = TextStyle(
     fontFamily = Kit.Round, fontSize = size, fontWeight = FontWeight(weight),
 )
@@ -260,7 +258,6 @@ fun Toggle(checked: Boolean, onChange: (Boolean) -> Unit, enabled: Boolean = tru
     val track by animateColorAsState(if (checked) cs.primary else cs.surfaceContainerHighest, label = "tt")
     Box(
         Modifier.size(40.dp, 24.dp).clip(CircleShape).background(track)
-            .then(if (checked) Modifier else Modifier.background(Color.Transparent))
             .clickable(enabled = enabled, role = Role.Switch) { onChange(!checked) },
     ) {
         Box(

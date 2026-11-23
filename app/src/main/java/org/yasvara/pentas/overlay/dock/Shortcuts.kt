@@ -35,6 +35,11 @@ class Shortcuts @Inject constructor(
     fun pin(mode: Int, pkg: String) = prefs.edit { putString(key(mode), (pinned(mode) - pkg + pkg).joinToString(",")) }
     fun unpin(mode: Int, pkg: String) = prefs.edit { putString(key(mode), (pinned(mode) - pkg).joinToString(",")) }
 
+    /** Persists a drag-and-drop reordered shortcut list as the pinned order for [mode]. */
+    fun setOrder(mode: Int, pkgs: List<String>) {
+        prefs.edit { putString(key(mode), pkgs.distinct().joinToString(",")) }
+    }
+
     suspend fun load(mode: Int, exclude: String?, slots: Int): List<AppRef> = withContext(Dispatchers.IO) {
         val skip = setOfNotNull(exclude, context.packageName)
         val pins = pinned(mode).filter { it !in skip }

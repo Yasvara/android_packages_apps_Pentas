@@ -23,7 +23,7 @@ import javax.inject.Singleton
 
 /**
  * Everything the home can show as a quick toggle (one connected row of [TOGGLE_SLOTS]) or a
- * tool (rows of four, paged). The user picks both lists in Edit; defaults cover the common case.
+ * tool (rows of four, paged). The user picks or drag-reorders both lists; defaults cover the common case.
  */
 @Singleton
 class TileRegistry @Inject constructor(
@@ -38,6 +38,7 @@ class TileRegistry @Inject constructor(
     private val session: ActiveSessionStore,
 ) {
     private lateinit var all: List<TileAction>
+    private var byId: Map<String, TileAction> = emptyMap()
     private val toggleIds = mutableStateListOf<String>()
     private val toolIds = mutableStateListOf<String>()
 
@@ -45,25 +46,52 @@ class TileRegistry @Inject constructor(
     val toggles: List<TileAction> get() = toggleIds.mapNotNull(::find)
     val tools: List<TileAction> get() = toolIds.mapNotNull(::find)
 
-    private fun find(id: String) = all.firstOrNull { it.id == id }
+    fun find(id: String): TileAction? = byId[id]
 
     fun init() {
         all = build()
+        byId = all.associateBy { it.id }
         toggleIds.clear()
-        toggleIds.addAll(appSettings.quickToggleOrder.ifEmpty { DEFAULT_TOGGLES }.filter { find(it) != null }.take(TOGGLE_SLOTS))
+        toggleIds.addAll(appSettings.quickToggleOrder.ifEmpty { DEFAULT_TOGGLES }.filter { it in byId }.take(TOGGLE_SLOTS))
         toolIds.clear()
-        toolIds.addAll(appSettings.tileOrder.ifEmpty { DEFAULT_TOOLS }.filter { find(it) != null })
+        toolIds.addAll(appSettings.tileOrder.ifEmpty { DEFAULT_TOOLS }.filter { it in byId })
     }
 
     fun setToggles(ids: List<String>) {
-        toggleIds.clear(); toggleIds.addAll(ids.take(TOGGLE_SLOTS)); appSettings.quickToggleOrder = toggleIds.toList()
+        toggleIds.clear()
+        toggleIds.addAll(ids.distinct().filter { it in byId }.take(TOGGLE_SLOTS))
+        appSettings.quickToggleOrder = toggleIds.toList()
     }
 
     fun setTools(ids: List<String>) {
-        toolIds.clear(); toolIds.addAll(ids); appSettings.tileOrder = toolIds.toList()
+        toolIds.clear()
+        toolIds.addAll(ids.distinct().filter { it in byId })
+        appSettings.tileOrder = toolIds.toList()
     }
 
-    fun reset() { setToggles(DEFAULT_TOGGLES.filter { find(it) != null }); setTools(DEFAULT_TOOLS.filter { find(it) != null }) }
+    fun moveToggle(from: Int, to: Int, persist: Boolean = false) {
+        if (from !in toggleIds.indices || to !in toggleIds.indices || from == to) return
+        toggleIds.add(to, toggleIds.removeAt(from))
+        if (persist) appSettings.quickToggleOrder = toggleIds.toList()
+    }
+
+    fun moveTool(fromId: String, toId: String, persist: Boolean = false) {
+        val from = toolIds.indexOf(fromId)
+        val to = toolIds.indexOf(toId)
+        if (from < 0 || to < 0 || from == to) return
+        toolIds.add(to, toolIds.removeAt(from))
+        if (persist) appSettings.tileOrder = toolIds.toList()
+    }
+
+    fun persistOrder() {
+        appSettings.quickToggleOrder = toggleIds.toList()
+        appSettings.tileOrder = toolIds.toList()
+    }
+
+    fun reset() {
+        setToggles(DEFAULT_TOGGLES.filter { it in byId })
+        setTools(DEFAULT_TOOLS.filter { it in byId })
+    }
 
     private fun build(): List<TileAction> = buildList {
         val wifi = context.getSystemService(android.net.wifi.WifiManager::class.java)
@@ -115,52 +143,36 @@ class TileRegistry @Inject constructor(
 
     /** Platform toggles offered in the pool; never placed by default. */
     private fun MutableList<TileAction>.addSystemTiles() {
-
         if (hasFlashlightSupport(context)) {
-
             add(FlashlightTile("flashlight", context.getString(R.string.tile_flashlight),
                 R.drawable.sym_flashlight_on, context))
         }
-
         add(AirplaneTile("airplane", context.getString(R.string.tile_airplane_mode),
             R.drawable.sym_flight, context))
-
         add(AutoRotateTile("auto_rotate", context.getString(R.string.tile_auto_rotate),
             R.drawable.sym_screen_rotation_up, context))
-
         add(RotationLockTile("rotation_lock", context.getString(R.string.tile_rotation_lock),
             R.drawable.sym_rotate_right, context))
-
         add(LocationTile("location", context.getString(R.string.tile_location),
             R.drawable.sym_location_on, context))
-
         if (hasNfcSupport(context)) {
-
             add(NfcTile("nfc", context.getString(R.string.tile_nfc),
                 R.drawable.sym_nfc, context))
         }
-
         add(HotspotTile("hotspot", context.getString(R.string.tile_hotspot),
             R.drawable.sym_wifi_tethering, context))
-
         add(BatterySaverTile("battery_saver", context.getString(R.string.tile_battery_saver),
             R.drawable.sym_battery_saver, context))
-
         add(DarkModeTile("dark_mode", context.getString(R.string.tile_dark_mode),
             R.drawable.sym_dark_mode, context))
-
         add(ColorInversionTile("color_inversion", context.getString(R.string.tile_color_inversion),
             R.drawable.sym_invert_colors, context))
-
         add(NightLightTile("night_light", context.getString(R.string.tile_night_light),
             R.drawable.sym_nights_stay, context))
-
         add(DataSaverTile("data_saver", context.getString(R.string.tile_data_saver),
             R.drawable.sym_data_saver_on, context))
-
         add(UsbTetherTile("usb_tether", context.getString(R.string.tile_usb_tether),
             R.drawable.sym_usb, context))
-
         add(CastTile("cast", context.getString(R.string.tile_cast),
             R.drawable.sym_cast, context))
     }

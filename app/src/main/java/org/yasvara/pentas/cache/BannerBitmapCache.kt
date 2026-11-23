@@ -15,6 +15,9 @@ import javax.inject.Singleton
 @Singleton
 class BannerBitmapCache @Inject constructor() {
 
+    private val lock = Any()
+    private val keysByPath = HashMap<String, MutableSet<String>>()
+
     private val cache = object : LruCache<String, Bitmap>(24 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount
     }
@@ -23,24 +26,30 @@ class BannerBitmapCache @Inject constructor() {
     fun get(path: String, reqW: Int = 600): Bitmap? {
         val f = File(path)
         if (!f.exists()) return null
-        val key = "${f.absolutePath}:${f.lastModified()}:$reqW"
+        val abs = f.absolutePath
+        val key = "$abs:${f.lastModified()}:$reqW"
         cache.get(key)?.let { return it }
-        val bmp = decodeSampled(f.absolutePath, reqW) ?: return null
+        val bmp = decodeSampled(abs, reqW) ?: return null
+        synchronized(lock) {
+            keysByPath.getOrPut(abs) { HashSet() }.add(key)
+        }
         cache.put(key, bmp)
         return bmp
     }
 
-
     fun invalidate(path: String) {
-        // Remove all sampled variants for this file (LruCache has no snapshot() on this version).
-        // Brute-force: try common reqW variants + bare path.
-        cache.remove(path)
-        cache.remove("$path:${File(path).lastModified()}:600")
-        // Fallback: evict by exact key if caller passed absolute path.
-        try { cache.remove(key(File(path))) } catch (_: Exception) {}
+        val abs = File(path).absolutePath
+        val keys = synchronized(lock) {
+            (keysByPath.remove(path).orEmpty() + keysByPath.remove(abs).orEmpty()).toList()
+        }
+        keys.forEach { cache.remove(it) }
     }
 
-    fun evictAll() = cache.evictAll()
+    fun evictAll() {
+        synchronized(lock) { keysByPath.clear() }
+        cache.evictAll()
+    }
+
     fun trimToSize(maxBytes: Int) = cache.trimToSize(maxBytes)
 
     private fun decodeSampled(absPath: String, reqW: Int): Bitmap? {
@@ -50,13 +59,10 @@ class BannerBitmapCache @Inject constructor() {
             val w = bounds.outWidth
             val h = bounds.outHeight
             if (w <= 0 || h <= 0) {
-                // Fallback: file is not an image or header unreadable.
                 return runCatching { BitmapFactory.decodeFile(absPath) }.getOrNull()
             }
             var sample = 1
-            // Power-of-two sampling keeps decoder fast; any integer works on modern Android.
             while (w / (sample * 2) >= reqW && h / (sample * 2) >= reqW / 2) sample *= 2
-            // Refine for non-power-of-two remainders (e.g. 1920→600 needs 3, not 2).
             val exactSample = maxOf(1, minOf(w / reqW.coerceAtLeast(1), h / (reqW / 2).coerceAtLeast(1)))
             if (exactSample > sample) sample = exactSample
             val opts = BitmapFactory.Options().apply {
@@ -67,11 +73,8 @@ class BannerBitmapCache @Inject constructor() {
             runCatching { BitmapFactory.decodeFile(absPath, opts) }.getOrNull()
                 ?: runCatching { BitmapFactory.decodeFile(absPath) }.getOrNull()
         } catch (_: OutOfMemoryError) {
-            // OOM on decode: evict half the cache and give up on this banner.
             try { cache.trimToSize(cache.maxSize() / 2) } catch (_: Exception) {}
             null
         } catch (_: Exception) { null }
     }
-
-    private fun key(f: File) = "${f.absolutePath}:${f.lastModified()}"
 }

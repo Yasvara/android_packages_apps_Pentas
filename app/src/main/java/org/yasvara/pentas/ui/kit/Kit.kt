@@ -7,9 +7,7 @@ package org.yasvara.pentas.ui.kit
 import android.graphics.Typeface
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -48,7 +46,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.pointer.pointerInput
@@ -193,6 +190,73 @@ fun RoundButton(
             .semantics { contentDescription = desc },
         contentAlignment = Alignment.Center,
     ) { Glyph(icon, if (active) cs.onPrimary else cs.onSurface, size * 0.5f) }
+}
+
+/** Flat M3 Expressive split button: primary pill + connected secondary icon button. */
+@Composable
+fun SplitActionButton(
+    primaryLabel: String,
+    @DrawableRes primaryIcon: Int,
+    onPrimary: () -> Unit,
+    @DrawableRes secondaryIcon: Int,
+    secondaryDesc: String,
+    onSecondary: () -> Unit,
+    modifier: Modifier = Modifier,
+    height: Dp = 42.dp,
+) {
+    val cs = MaterialTheme.colorScheme
+    val src1 = remember { MutableInteractionSource() }
+    val src2 = remember { MutableInteractionSource() }
+    val p1 by src1.collectIsPressedAsState()
+    val p2 by src2.collectIsPressedAsState()
+    val inner1 by animateDpAsState(if (p1) 12.dp else 6.dp, Kit.fast(), label = "sp1")
+    val inner2 by animateDpAsState(if (p2) 14.dp else 6.dp, Kit.fast(), label = "sp2")
+    val outer = height / 2
+    Row(modifier.height(height), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(
+            Modifier.fillMaxHeight().clip(RoundedCornerShape(outer, inner1, inner1, outer))
+                .background(cs.primary)
+                .clickable(src1, null, role = Role.Button, onClick = onPrimary)
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Glyph(primaryIcon, cs.onPrimary, 18.dp)
+            Text(primaryLabel, style = label(14.sp, 650), color = cs.onPrimary, maxLines = 1)
+        }
+        Box(
+            Modifier.size(height).clip(RoundedCornerShape(inner2, outer, outer, inner2))
+                .background(cs.surfaceContainerHigh)
+                .clickable(src2, null, role = Role.Button, onClick = onSecondary)
+                .semantics { contentDescription = secondaryDesc },
+            contentAlignment = Alignment.Center,
+        ) {
+            Glyph(secondaryIcon, cs.onSurface, 18.dp)
+        }
+    }
+}
+
+/** Flat M3 Expressive floating pill toolbar (horizontal or vertical). */
+@Composable
+fun FloatingPillBar(
+    modifier: Modifier = Modifier,
+    vertical: Boolean = false,
+    content: @Composable () -> Unit,
+) {
+    val bg = MaterialTheme.colorScheme.surfaceContainerHigh
+    if (vertical) {
+        Column(
+            modifier.clip(CircleShape).background(bg).padding(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) { content() }
+    } else {
+        Row(
+            modifier.clip(CircleShape).background(bg).padding(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) { content() }
+    }
 }
 
 /** Item [index] of [count] in a connected button group: the selected one morphs to a pill. */

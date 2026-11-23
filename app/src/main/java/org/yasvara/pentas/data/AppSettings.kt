@@ -32,6 +32,9 @@ class AppSettings(context: Context) {
     var bannerSource by observable.string(KEY_BANNER_SOURCE, org.yasvara.pentas.data.banner.BannerSource.DEFAULT.key)
     var bannerAutoFetch by observable.boolean(KEY_BANNER_AUTO_FETCH, true)
 
+    var libraryCompact by observable.boolean(KEY_LIBRARY_COMPACT, false)
+    val libraryCompactState get() = observable.booleanState(KEY_LIBRARY_COMPACT, false)
+
     var tileOrder: List<String>
         get() = list(KEY_TILE_ORDER)
         set(v) = db.edit { putString(KEY_TILE_ORDER, v.joinToString(",")) }
@@ -54,6 +57,7 @@ class AppSettings(context: Context) {
         const val KEY_AUTO_DND = "pentas_auto_dnd"
         const val KEY_BANNER_SOURCE = "pentas_banner_source"
         const val KEY_BANNER_AUTO_FETCH = "pentas_banner_auto_fetch"
+        const val KEY_LIBRARY_COMPACT = "pentas_library_compact"
         private const val KEY_TILE_ORDER = "tile_order"
         private const val KEY_QUICK_TOGGLE_ORDER = "quick_toggle_order"
     }
